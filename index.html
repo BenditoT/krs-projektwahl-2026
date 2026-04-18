@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>KRS Projektwahl 2026 – Prototyp</title>
+  <style>
+    :root {
+      --krs-blau: #4A6A83;
+      --krs-orange: #E87722;
+      --krs-gelb: #F5B335;
+      --grau-hell: #F3F4F6;
+      --grau-text: #374151;
+      --grau-border: #D1D5DB;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0;
+      padding: 24px 16px;
+      background: linear-gradient(180deg, var(--grau-hell) 0%, #fff 100%);
+      color: var(--grau-text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 680px; margin: 0 auto; }
+    .logo-strip {
+      display: flex; height: 12px; border-radius: 3px; overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .logo-strip span { flex: 1; }
+    .logo-strip .b { background: var(--krs-blau); }
+    .logo-strip .o { background: var(--krs-orange); }
+    .logo-strip .g { background: var(--krs-gelb); }
+    h1 {
+      color: var(--krs-blau);
+      font-size: 28px;
+      margin: 0 0 8px;
+    }
+    .subtitle {
+      color: var(--grau-text);
+      margin: 0 0 28px;
+      font-size: 15px;
+    }
+    .banner {
+      background: #FEF3C7;
+      border-left: 4px solid var(--krs-gelb);
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid var(--grau-border);
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 16px;
+      transition: box-shadow 0.15s, transform 0.15s;
+      display: block;
+      text-decoration: none;
+      color: inherit;
+    }
+    .card:hover { box-shadow: 0 4px 12px rgba(74,106,131,0.12); transform: translateY(-1px); }
+    .card-title {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 600; font-size: 17px; color: var(--krs-blau);
+      margin-bottom: 6px;
+    }
+    .tag {
+      font-size: 11px; background: var(--krs-blau); color: white;
+      padding: 2px 8px; border-radius: 3px; font-weight: 600;
+    }
+    .tag.orange { background: var(--krs-orange); }
+    .tag.gelb { background: var(--krs-gelb); color: #333; }
+    .card-desc { font-size: 14px; color: var(--grau-text); line-height: 1.5; }
+    footer {
+      margin-top: 40px; font-size: 12px; color: #9CA3AF; text-align: center;
+    }
+    footer a { color: var(--krs-blau); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo-strip"><span class="b"></span><span class="o"></span><span class="g"></span></div>
+    <img src="krs-logo.jpg" alt="KRS · Kurpfalz-Realschule Schriesheim"
+         style="display:block; margin: 24px auto 8px; max-width: 280px; width: 70%; height: auto;"
+         onerror="this.style.display='none';">
+    <h1>KRS Projektwahl 2026</h1>
+    <p class="subtitle">Prototyp-Hosting · Kurpfalz-Realschule Schriesheim · Projekttage 21.–23. Juli 2026</p>
+
+    <div class="banner">
+      <strong>Hinweis:</strong> Dies ist ein <strong>Klick-Prototyp mit Demo-Daten</strong>.
+      Die echte Produktionsumgebung wird nach Freigabe des Datenschutzbeauftragten aufgesetzt.
+    </div>
+
+    <a class="card" href="schueler.html">
+      <div class="card-title">
+        <span>Schüler-App</span>
+        <span class="tag">Demo</span>
+      </div>
+      <div class="card-desc">
+        Anmelde-Code eingeben, drei Wunsch-Projekte wählen, Ergebnis abrufen,
+        Tauschwunsch stellen. Demo-Codes: <code>7B-A7K2</code>, <code>5A-B3X9</code>,
+        <code>9C-K7M2</code>, <code>8A-T4P1</code>.
+      </div>
+    </a>
+
+    <a class="card" href="admin.html">
+      <div class="card-title">
+        <span>Admin-Dashboard</span>
+        <span class="tag orange">Demo</span>
+      </div>
+      <div class="card-desc">
+        Sidebar mit Dashboard, Schüler-/Projekte-/Lehrer-Verwaltung, Verteilungs-Workflow,
+        Tauschwunsch-Inbox, Phasen-Steuerung.
+      </div>
+    </a>
+
+    <a class="card" href="beispiel-schuelerbrief.pdf" target="_blank" rel="noopener">
+      <div class="card-title">
+        <span>Beispiel-Schülerbrief (PDF)</span>
+        <span class="tag gelb">Vorlage</span>
+      </div>
+      <div class="card-desc">
+        Serienbrief-Vorlage mit KRS-Branding, QR-Code und Anmelde-Code —
+        bereit für den Druck aus Python (siehe <code>generate_schuelerbrief.py</code>).
+      </div>
+    </a>
+
+    <footer>
+      Stand: April 2026 · Konzeption und Klickprototypen fertig, produktive Umsetzung läuft.<br>
+      Kontakt: <a href="mailto:kotzan@realschule-schriesheim.de">Norbert Kotzan</a>
+    </footer>
+  </div>
+</body>
+</html>
