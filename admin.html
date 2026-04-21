@@ -1,0 +1,1976 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KRS Admin · Projektwahl 2026</title>
+<meta name="theme-color" content="#4A6A83">
+<style>
+:root {
+  --krs-blau: #4A6A83; --krs-blau-dark: #354E62; --krs-blau-light: #E8EEF3; --krs-blau-lighter: #F4F7F9;
+  --krs-orange: #E87722; --krs-orange-dark: #C0611A; --krs-orange-light: #FDF2E8;
+  --krs-gelb: #F5B335; --krs-gelb-dark: #D89A22; --krs-gelb-light: #FEF7E6;
+  --success: #2B8A3E; --success-bg: #EBFBEE;
+  --error: #C92A2A; --error-bg: #FFF5F5;
+  --bg: #F4F6F8; --bg-card: #FFFFFF; --bg-subtle: #F4F6F8;
+  --text: #1A2332; --text-muted: #5C6370; --text-light: #8A92A0;
+  --border: #DEE4EB; --border-strong: #C4CCD6;
+  --radius: 12px; --radius-sm: 8px; --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgba(26,35,50,0.04);
+  --shadow: 0 2px 8px rgba(26,35,50,0.06);
+  --shadow-lg: 0 8px 24px rgba(26,35,50,0.10);
+  --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);line-height:1.55;min-height:100vh}
+
+/* === LAYOUT === */
+.app{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
+@media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}}
+
+/* === SIDEBAR === */
+.sidebar{background:var(--krs-blau-dark);color:white;padding:20px 0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.sidebar-header{padding:0 20px 20px;border-bottom:1px solid rgba(255,255,255,0.1)}
+.sidebar-logo{background:white;padding:8px;border-radius:6px;display:inline-block;margin-bottom:10px}
+.sidebar-logo img{height:32px;width:auto;display:block}
+.sidebar-title{font-size:14px;font-weight:700;opacity:0.9}
+.sidebar-subtitle{font-size:11px;opacity:0.6;margin-top:2px}
+.sidebar-phase{margin:16px 20px;padding:8px 12px;background:rgba(245,179,53,0.2);border-radius:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;color:var(--krs-gelb)}
+.sidebar-nav{padding:10px 0}
+.nav-section{padding:6px 20px;font-size:10px;text-transform:uppercase;letter-spacing:0.8px;opacity:0.5;margin-top:16px;font-weight:700}
+.nav-item{padding:10px 20px;cursor:pointer;font-size:14px;display:flex;align-items:center;gap:10px;transition:all var(--transition);border-left:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,0.05)}
+.nav-item.active{background:rgba(255,255,255,0.1);border-left-color:var(--krs-gelb);font-weight:600}
+.nav-item.recommended{position:relative}
+.nav-item.recommended::after{content:"👉";position:absolute;right:16px;animation:wiggle 1.5s ease-in-out infinite}
+@keyframes wiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-10deg)}75%{transform:rotate(10deg)}}
+.badge{background:var(--krs-orange);color:white;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;margin-left:auto}
+.badge.badge-success{background:var(--success)}
+.badge.badge-muted{background:rgba(255,255,255,0.2)}
+
+/* === HAUPTBEREICH === */
+.main{padding:24px;max-width:100%;overflow-x:hidden}
+.main-header{margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.main-title{font-size:24px;font-weight:700;margin:0;letter-spacing:-0.4px}
+.main-subtitle{color:var(--text-muted);font-size:14px;margin-top:4px}
+.user-chip{display:flex;align-items:center;gap:8px;padding:6px 12px;background:white;border:1px solid var(--border);border-radius:20px;font-size:13px}
+
+/* === CARDS === */
+.card{background:var(--bg-card);border-radius:var(--radius);padding:20px;margin-bottom:16px;box-shadow:var(--shadow-sm);border:1px solid var(--border)}
+.card h2{margin:0 0 16px;font-size:18px;font-weight:700}
+.card h3{margin:20px 0 10px;font-size:15px;font-weight:700}
+
+/* === DASHBOARD KACHELN === */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:24px}
+.dash-tile{background:white;padding:20px;border-radius:var(--radius);border:1px solid var(--border);box-shadow:var(--shadow-sm);transition:all var(--transition);cursor:pointer}
+.dash-tile:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.dash-tile.highlight{border-color:var(--krs-blau);background:var(--krs-blau-lighter)}
+.dash-tile.action-required{border-color:var(--krs-orange);background:var(--krs-orange-light)}
+.dash-tile-label{font-size:12px;color:var(--text-muted);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.dash-tile-value{font-size:32px;font-weight:800;color:var(--text);line-height:1}
+.dash-tile-sub{font-size:13px;color:var(--text-muted);margin-top:4px}
+.dash-tile .progress-bar{margin-top:12px;height:6px;background:var(--bg-subtle);border-radius:3px;overflow:hidden}
+.dash-tile .progress-fill{height:100%;background:var(--krs-blau);transition:width 0.5s ease}
+
+/* === BUTTONS === */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:10px 18px;border:none;border-radius:var(--radius-sm);font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:all var(--transition);text-decoration:none;min-height:40px;white-space:nowrap}
+.btn-primary{background:var(--krs-blau);color:white}
+.btn-primary:hover:not(:disabled){background:var(--krs-blau-dark)}
+.btn-primary:disabled{background:var(--border);color:var(--text-light);cursor:not-allowed}
+.btn-secondary{background:white;color:var(--krs-blau);border:2px solid var(--krs-blau)}
+.btn-secondary:hover{background:var(--krs-blau-light)}
+.btn-accent{background:var(--krs-orange);color:white}
+.btn-accent:hover{background:var(--krs-orange-dark)}
+.btn-ghost{background:transparent;color:var(--text-muted);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg-subtle)}
+.btn-danger{background:var(--error);color:white}
+.btn-danger:hover{background:#A51E1E}
+.btn-success{background:var(--success);color:white}
+.btn-success:hover{background:#1F6E2F}
+.btn-small{padding:6px 12px;font-size:13px;min-height:32px}
+.btn-full{width:100%}
+.btn-group{display:flex;gap:8px;flex-wrap:wrap}
+
+/* === TABLES === */
+.table-wrapper{overflow-x:auto;background:white;border-radius:var(--radius);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{background:var(--bg-subtle);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-muted);position:sticky;top:0}
+tr:hover td{background:var(--bg-subtle)}
+td.actions-cell{white-space:nowrap}
+
+/* === BADGES / PILLS === */
+.pill{display:inline-block;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:600}
+.pill-info{background:var(--krs-blau-light);color:var(--krs-blau-dark)}
+.pill-success{background:var(--success-bg);color:var(--success)}
+.pill-warning{background:var(--krs-gelb-light);color:var(--krs-gelb-dark)}
+.pill-error{background:var(--error-bg);color:var(--error)}
+.pill-wahl-1{background:var(--krs-blau-light);color:var(--krs-blau-dark)}
+.pill-wahl-2{background:var(--krs-orange-light);color:var(--krs-orange-dark)}
+.pill-wahl-3{background:var(--krs-gelb-light);color:var(--krs-gelb-dark)}
+.pill-wahl-null{background:var(--bg-subtle);color:var(--text-muted)}
+
+/* === ALERTS === */
+.alert{padding:12px 14px;border-radius:var(--radius-sm);margin-bottom:14px;font-size:14px}
+.alert-info{background:var(--krs-blau-light);color:var(--krs-blau-dark);border-left:4px solid var(--krs-blau)}
+.alert-warning{background:var(--krs-gelb-light);color:var(--krs-gelb-dark);border-left:4px solid var(--krs-gelb)}
+.alert-success{background:var(--success-bg);color:var(--success);border-left:4px solid var(--success)}
+.alert-error{background:var(--error-bg);color:var(--error);border-left:4px solid var(--error)}
+
+/* === FORMULAR === */
+.input-group{margin-bottom:14px}
+label{display:block;font-weight:600;font-size:13px;margin-bottom:6px;color:var(--text)}
+input[type="text"],input[type="number"],input[type="email"],input[type="file"],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--border-strong);border-radius:var(--radius-sm);font-size:14px;font-family:inherit;background:white;transition:all var(--transition)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau);box-shadow:0 0 0 3px rgba(74,106,131,0.15)}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:600px){.form-row{grid-template-columns:1fr}}
+
+/* === MODAL === */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
+.modal-content{background:white;border-radius:var(--radius-lg);max-width:600px;width:100%;padding:24px;box-shadow:var(--shadow-lg);animation:modalSlide 0.2s ease-out;position:relative}
+@keyframes modalSlide{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
+.modal-content h2{margin-top:0}
+.modal-close{position:absolute;top:16px;right:16px;background:transparent;border:none;font-size:24px;line-height:1;cursor:pointer;color:var(--text-muted);padding:4px 10px;border-radius:var(--radius-sm)}
+.modal-close:hover{color:var(--text);background:var(--bg-subtle)}
+.empty-state{text-align:center;padding:48px 16px;color:var(--text-muted);font-style:normal}
+.empty-state .empty-emoji{font-size:40px;display:block;margin-bottom:12px;opacity:.6}
+.empty-state .empty-title{font-weight:600;color:var(--text);margin-bottom:4px}
+.empty-state .empty-hint{font-size:13px}
+
+/* === SPECIAL === */
+.demo-badge{position:fixed;top:12px;right:12px;background:var(--krs-orange);color:white;padding:6px 10px;border-radius:4px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.8px;z-index:100}
+.phase-tabs{display:flex;gap:4px;margin-bottom:20px;overflow-x:auto;padding-bottom:4px}
+.phase-tab{padding:6px 14px;background:white;border:1px solid var(--border);border-radius:20px;font-size:12px;cursor:pointer;white-space:nowrap;font-weight:600;color:var(--text-muted);transition:all var(--transition)}
+.phase-tab.active{background:var(--krs-blau);color:white;border-color:var(--krs-blau)}
+.phase-tab:hover:not(.active){background:var(--bg-subtle)}
+
+/* === STAT COMPARISON === */
+.stat-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:14px}
+.stat-row:last-child{border-bottom:none}
+.stat-bar{flex:1;height:20px;background:var(--bg-subtle);border-radius:10px;overflow:hidden;position:relative}
+.stat-bar-fill{height:100%;display:flex;align-items:center;padding-left:10px;color:white;font-weight:600;font-size:12px;transition:width 0.5s ease}
+.stat-bar-fill.w1{background:var(--krs-blau)}
+.stat-bar-fill.w2{background:var(--krs-orange)}
+.stat-bar-fill.w3{background:var(--krs-gelb);color:#5C3D00}
+.stat-bar-fill.none{background:var(--text-muted)}
+.stat-label{width:80px;font-weight:600;font-size:13px}
+.stat-value{width:80px;text-align:right;font-weight:600;color:var(--text-muted)}
+
+.swap-highlight{background:var(--success-bg);border:2px solid var(--success);padding:10px;border-radius:var(--radius-sm);margin:8px 0}
+.swap-highlight strong{color:var(--success)}
+
+/* === CSV IMPORT === */
+.csv-preview{margin-top:16px}
+.csv-preview-table{font-size:13px}
+.csv-row{background:var(--bg-subtle);border:1px solid var(--border);padding:8px;margin-bottom:4px;border-radius:4px;display:flex;gap:8px}
+.csv-cell{flex:1;min-width:100px}
+.csv-status{width:80px;text-align:center;font-weight:600}
+.csv-status.valid{color:var(--success)}
+.csv-status.error{color:var(--error)}
+
+/* === Mobile Nav === */
+.mobile-nav-toggle{display:none;position:fixed;top:12px;left:12px;background:var(--krs-blau);color:white;padding:8px;border-radius:6px;z-index:50;border:none;font-size:20px;cursor:pointer}
+@media(max-width:900px){
+  .mobile-nav-toggle{display:block}
+  .sidebar.mobile-open{display:block;position:fixed;inset:0;z-index:40;width:100%}
+  .main{padding-top:60px}
+}
+
+/* === TOAST === */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:999}
+.toast{background:white;padding:16px 20px;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);margin-bottom:8px;border-left:4px solid var(--success);animation:toastSlide 0.3s ease-out;max-width:400px}
+.toast.error{border-left-color:var(--error);color:var(--error)}
+.toast.success{border-left-color:var(--success);color:var(--success)}
+@keyframes toastSlide{from{opacity:0;transform:translateX(400px)}to{opacity:1;transform:translateX(0)}}
+</style>
+</head>
+<body>
+
+<!-- ============================================ -->
+<!-- LOGIN GATE (Client-seitig, SHA-256)         -->
+<!-- Passwort: Krs26PW (Hash im Script unten)   -->
+<!-- ============================================ -->
+<div id="loginGate" style="position:fixed;inset:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#4A6A83 0%,#3A5468 50%,#2A3E4C 100%);z-index:10000;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="background:rgba(255,255,255,0.97);border-radius:16px;padding:2.5rem 2rem;max-width:400px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.35);text-align:center;">
+    <div style="width:72px;height:72px;margin:0 auto 1rem;border-radius:16px;background:linear-gradient(135deg,#4A6A83,#E87722,#F5B335);display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:28px;letter-spacing:1px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">KRS</div>
+    <h2 style="color:#2A3E4C;margin:0 0 0.25rem;font-size:1.35rem;">Admin-Dashboard</h2>
+    <p style="color:#6C7A87;margin:0 0 1.5rem;font-size:0.9rem;">KRS Projektwahl 2026 · Anmeldung erforderlich</p>
+    <input id="pwInput" type="password" placeholder="Passwort"
+      onkeydown="if(event.key==='Enter')checkPw()"
+      autocomplete="current-password"
+      style="width:100%;padding:12px 14px;border:1px solid #D0D7DE;border-radius:8px;background:#FAFBFC;color:#2A3E4C;font-size:1rem;outline:none;box-sizing:border-box;margin-bottom:1rem;">
+    <button onclick="checkPw()"
+      style="width:100%;padding:12px;background:linear-gradient(135deg,#4A6A83,#3A5468);color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600;box-shadow:0 2px 8px rgba(74,106,131,0.3);">
+      🔓 Anmelden
+    </button>
+    <p id="pwError" style="display:none;color:#D93025;margin:0.8rem 0 0;font-size:0.85rem;font-weight:500;">Falsches Passwort – bitte nochmal versuchen.</p>
+    <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid #E5E8EB;">
+      <a id="forgotPwLink" href="#" onclick="forgotPw();return false;"
+         style="color:#4A6A83;font-size:0.85rem;text-decoration:none;">
+        🔑 Passwort vergessen?
+      </a>
+    </div>
+    <p style="color:#8B97A2;margin:1rem 0 0;font-size:0.75rem;">Kurpfalz-Realschule Schriesheim</p>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<!-- APP-CONTENT (versteckt bis Auth erfolgreich) -->
+<!-- ============================================ -->
+<div id="appContent" style="display:none;">
+  <div class="demo-badge">KLICKPROTOTYP</div>
+  <button class="mobile-nav-toggle" id="mobile-nav-toggle">☰</button>
+  <div id="app"></div>
+</div>
+
+<script>
+// === Password-Gate ===
+// SHA-256 von 'Krs26PW'
+const KRS_ADMIN_HASH = '10a4788aaea1775b71700f277f825b6ba7f5180aa0b76edc047bc5e225422cfb';
+const KRS_AUTH_KEY = 'krs_admin_auth';
+
+async function _sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function checkPw() {
+  const val = document.getElementById('pwInput').value;
+  const hash = await _sha256(val);
+  if (hash === KRS_ADMIN_HASH) {
+    sessionStorage.setItem(KRS_AUTH_KEY, '1');
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('appContent').style.display = 'block';
+  } else {
+    const err = document.getElementById('pwError');
+    err.style.display = 'block';
+    const input = document.getElementById('pwInput');
+    input.value = '';
+    input.focus();
+  }
+}
+
+function forgotPw() {
+  const subject = encodeURIComponent('Passwort vergessen – KRS Projektwahl Admin');
+  const body = encodeURIComponent(
+    'Hallo Norbert,\n\n' +
+    'ich habe das Passwort für das Admin-Dashboard der KRS Projektwahl vergessen.\n' +
+    'Bitte schicke mir ein neues zu.\n\n' +
+    'Absender: \nSchule/Funktion: \n\nDanke!'
+  );
+  window.location.href = 'mailto:kotzan@realschule-schriesheim.de?subject=' + subject + '&body=' + body;
+}
+
+// Auto-Unlock wenn in dieser Tab-Session schon authentifiziert
+if (sessionStorage.getItem(KRS_AUTH_KEY) === '1') {
+  document.getElementById('loginGate').style.display = 'none';
+  document.getElementById('appContent').style.display = 'block';
+}
+
+// Fokus auf Passwort-Feld
+window.addEventListener('DOMContentLoaded', () => {
+  if (sessionStorage.getItem(KRS_AUTH_KEY) !== '1') {
+    document.getElementById('pwInput').focus();
+  }
+});
+</script>
+
+<script>
+/**
+ * KRS Projektwahl — Verteilungs-Algorithmus
+ *
+ * Algorithmus: Random Serial Dictatorship (RSD) mit Seed
+ * Fairness-garantiert, strategiesicher, reproduzierbar.
+ *
+ * Verwendung:
+ *   const algo = new VerteilungsAlgorithmus();
+ *   const ergebnis = algo.verteile({
+ *     schueler: [...],  // Array von Schüler-Objekten mit code, klassenstufe, wahlen
+ *     projekte: [...],  // Array von Projekt-Objekten mit id, max_plaetze, min_klasse, max_klasse
+ *     seed: 'optional-seed-string'
+ *   });
+ */
+
+class VerteilungsAlgorithmus {
+
+  /**
+   * Erzeugt einen deterministischen Zufallsgenerator (PRNG) aus einem Seed.
+   * Wichtig: JS Math.random ist NICHT seedbar, deshalb eigene Implementierung.
+   * Uses the "Mulberry32" PRNG algorithm — einfach und ausreichend.
+   */
+  _createPRNG(seedString) {
+    // String → int Hash
+    let h = 1779033703 ^ seedString.length;
+    for (let i = 0; i < seedString.length; i++) {
+      h = Math.imul(h ^ seedString.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    let seed = h ^ (h >>> 16);
+
+    // Mulberry32
+    return function() {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  /**
+   * Fisher-Yates Shuffle mit seeded PRNG
+   */
+  _shuffle(array, prng) {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(prng() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
+
+  /**
+   * Generiert einen Default-Seed aus aktuellem Zeitpunkt
+   */
+  _generateSeed() {
+    return `krs-${new Date().toISOString()}-${Math.random().toString(36).substr(2, 6)}`;
+  }
+
+  /**
+   * Pre-Flight-Check: Validiert Input vor der Verteilung
+   * Gibt Warnungen und Fehler zurück, ohne zu verteilen
+   */
+  preFlightCheck({ schueler, projekte }) {
+    const ergebnis = {
+      ok: true,
+      warnungen: [],
+      fehler: []
+    };
+
+    // 1. Plausibilität
+    const summePlaetze = projekte.reduce((sum, p) => sum + p.max_plaetze, 0);
+    const anzahlSchueler = schueler.length;
+
+    if (summePlaetze < anzahlSchueler) {
+      ergebnis.fehler.push({
+        code: 'nicht_genug_plaetze',
+        message: `Nur ${summePlaetze} Plätze für ${anzahlSchueler} Schüler — ${anzahlSchueler - summePlaetze} Plätze fehlen!`
+      });
+      ergebnis.ok = false;
+    }
+
+    // 2. Haben alle Schüler Wahlen abgegeben?
+    const ohneWahlen = schueler.filter(s => !s.wahlen || !s.wahlen.erstwahl_id);
+    if (ohneWahlen.length > 0) {
+      ergebnis.warnungen.push({
+        code: 'schueler_ohne_wahlen',
+        message: `${ohneWahlen.length} Schüler haben keine Wahlen abgegeben`,
+        details: ohneWahlen.map(s => s.code)
+      });
+    }
+
+    // 3. Überbuchte Projekte (Erstwahl > Kapazität)
+    const erstWahlCounts = {};
+    schueler.forEach(s => {
+      if (s.wahlen?.erstwahl_id) {
+        erstWahlCounts[s.wahlen.erstwahl_id] = (erstWahlCounts[s.wahlen.erstwahl_id] || 0) + 1;
+      }
+    });
+
+    const ueberbucht = projekte.filter(p => (erstWahlCounts[p.id] || 0) > p.max_plaetze);
+    if (ueberbucht.length > 0) {
+      ergebnis.warnungen.push({
+        code: 'projekte_ueberbucht',
+        message: `${ueberbucht.length} Projekte sind als Erstwahl überbucht`,
+        details: ueberbucht.map(p => ({
+          titel: p.titel,
+          plaetze: p.max_plaetze,
+          erstwahl: erstWahlCounts[p.id]
+        }))
+      });
+    }
+
+    // 4. Unterbuchte Projekte (weniger Wünsche als min_teilnehmer)
+    const allWahlCounts = {};
+    schueler.forEach(s => {
+      if (s.wahlen?.erstwahl_id) allWahlCounts[s.wahlen.erstwahl_id] = (allWahlCounts[s.wahlen.erstwahl_id] || 0) + 1;
+      if (s.wahlen?.zweitwahl_id) allWahlCounts[s.wahlen.zweitwahl_id] = (allWahlCounts[s.wahlen.zweitwahl_id] || 0) + 1;
+      if (s.wahlen?.drittwahl_id) allWahlCounts[s.wahlen.drittwahl_id] = (allWahlCounts[s.wahlen.drittwahl_id] || 0) + 1;
+    });
+
+    const unterbucht = projekte.filter(p => {
+      const gesamtWuensche = allWahlCounts[p.id] || 0;
+      return gesamtWuensche < (p.min_teilnehmer || 0);
+    });
+    if (unterbucht.length > 0) {
+      ergebnis.warnungen.push({
+        code: 'projekte_unterbucht',
+        message: `${unterbucht.length} Projekte haben weniger Wünsche als Mindest-Teilnehmer`,
+        details: unterbucht.map(p => ({
+          titel: p.titel,
+          min_teilnehmer: p.min_teilnehmer,
+          wuensche: allWahlCounts[p.id] || 0
+        }))
+      });
+    }
+
+    return ergebnis;
+  }
+
+  /**
+   * Hauptverteilung via Random Serial Dictatorship
+   *
+   * @param {Object} input
+   * @param {Array} input.schueler - [{ code, klassenstufe, wahlen: {erstwahl_id, zweitwahl_id, drittwahl_id} }]
+   * @param {Array} input.projekte - [{ id, max_plaetze, min_klasse, max_klasse, titel }]
+   * @param {String} input.seed - optional, für Reproduzierbarkeit
+   * @returns {Object} { zuteilungen, nicht_zugeteilt, statistik, seed, belegung }
+   */
+  verteile({ schueler, projekte, seed }) {
+    const verwendeterSeed = seed || this._generateSeed();
+    const prng = this._createPRNG(verwendeterSeed);
+
+    // Nur Schüler mit Wahlen verteilen
+    const mitWahlen = schueler.filter(s => s.wahlen?.erstwahl_id);
+    const ohneWahlen = schueler.filter(s => !s.wahlen?.erstwahl_id);
+
+    // Zufallsreihenfolge mit Seed
+    const reihenfolge = this._shuffle(mitWahlen, prng);
+
+    // Projekt-Lookup
+    const projekteMap = {};
+    projekte.forEach(p => { projekteMap[p.id] = p; });
+
+    // Belegung tracken
+    const belegung = {};
+    projekte.forEach(p => { belegung[p.id] = 0; });
+
+    // Ergebnisse
+    const zuteilungen = [];
+    const nichtZugeteilt = [];
+
+    // RSD-Hauptschleife
+    reihenfolge.forEach((schuelerObj, idx) => {
+      const wahlen = [
+        { id: schuelerObj.wahlen.erstwahl_id, nr: 1 },
+        { id: schuelerObj.wahlen.zweitwahl_id, nr: 2 },
+        { id: schuelerObj.wahlen.drittwahl_id, nr: 3 }
+      ];
+
+      let zugeteilt = false;
+      for (const wahl of wahlen) {
+        const projekt = projekteMap[wahl.id];
+        if (!projekt) continue;
+
+        // Klassenstufe passt?
+        if (schuelerObj.klassenstufe < projekt.min_klasse || schuelerObj.klassenstufe > projekt.max_klasse) {
+          continue;
+        }
+
+        // Platz frei?
+        if (belegung[projekt.id] < projekt.max_plaetze) {
+          zuteilungen.push({
+            schueler_code: schuelerObj.code,
+            projekt_id: projekt.id,
+            projekt_titel: projekt.titel,
+            wahl_nr: wahl.nr,
+            position_in_reihenfolge: idx + 1
+          });
+          belegung[projekt.id]++;
+          zugeteilt = true;
+          break;
+        }
+      }
+
+      if (!zugeteilt) {
+        nichtZugeteilt.push({
+          schueler_code: schuelerObj.code,
+          klassenstufe: schuelerObj.klassenstufe,
+          wahlen_voll: wahlen.map(w => {
+            const p = projekteMap[w.id];
+            return {
+              wahl_nr: w.nr,
+              projekt_titel: p?.titel || 'Unbekannt',
+              passt_klassenstufe: p ? (schuelerObj.klassenstufe >= p.min_klasse && schuelerObj.klassenstufe <= p.max_klasse) : false,
+              belegung: p ? `${belegung[p.id]}/${p.max_plaetze}` : '?'
+            };
+          })
+        });
+      }
+    });
+
+    // Ohne-Wahlen ebenfalls auflisten
+    ohneWahlen.forEach(s => {
+      nichtZugeteilt.push({
+        schueler_code: s.code,
+        grund: 'hat_nicht_gewaehlt'
+      });
+    });
+
+    // Statistik
+    const gesamt_schueler = mitWahlen.length;
+    const erstwahl = zuteilungen.filter(z => z.wahl_nr === 1).length;
+    const zweitwahl = zuteilungen.filter(z => z.wahl_nr === 2).length;
+    const drittwahl = zuteilungen.filter(z => z.wahl_nr === 3).length;
+
+    const statistik = {
+      gesamt_schueler,
+      erstwahl, prozent_erstwahl: Math.round((erstwahl / gesamt_schueler) * 100),
+      zweitwahl, prozent_zweitwahl: Math.round((zweitwahl / gesamt_schueler) * 100),
+      drittwahl, prozent_drittwahl: Math.round((drittwahl / gesamt_schueler) * 100),
+      nicht_zugeteilt: nichtZugeteilt.length
+    };
+
+    // Projekt-Auslastung
+    const projekte_auslastung = projekte.map(p => ({
+      id: p.id,
+      titel: p.titel,
+      belegt: belegung[p.id],
+      max: p.max_plaetze,
+      unter_minimum: belegung[p.id] < (p.min_teilnehmer || 0)
+    }));
+
+    return { zuteilungen, nichtZugeteilt, statistik, seed: verwendeterSeed, belegung, projekte_auslastung };
+  }
+}
+
+window.VerteilungsAlgorithmus = VerteilungsAlgorithmus;
+</script>
+
+<script type="module">
+import { h, render } from 'https://esm.sh/preact@10.19.3';
+import { useState, useEffect, useMemo } from 'https://esm.sh/preact@10.19.3/hooks';
+import htm from 'https://esm.sh/htm@3.1.1';
+const html = htm.bind(h);
+
+const LOGO_SRC = "data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAJ0A2gDASIAAhEBAxEB/8QAHAABAAICAwEAAAAAAAAAAAAAAAYHBQgBAwQC/8QAVhAAAQMCAgUECg0ICQQBBQAAAAECAwQFBhEHEiExURNBYXEUIjI2c4GRssHRCBUjMzRSVFZydJOhsRYXGEJigpKUJDU3Q1NVs8LhJXWi8ERjg6PS8f/EABsBAQABBQEAAAAAAAAAAAAAAAACAQMEBgcF/8QAOxEBAAEDAQQEDQMEAgMBAAAAAAECAxEEBRIhMQYyQVETIjRTYXFykaGxwdHhFBaBFTM78CNCQ1LxYv/aAAwDAQACEQMRAD8A3LAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADhyo1qucqIiJmqrzAcggGLdLeEbDOtJDUSXatzySChRH7eCu3fipHmaaqymkjnveArtbbY96NWrc9ztXPcuqsbU+/wApci1XPHCE3KY7VwA6qOpgrKSGrppGywTMSSN7V2OaqZoqeI7S2mAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+const MOCK_LEHRER = [
+  { id: 'u1', name: 'Norbert Kotzan', email: 'kotzan@realschule-schriesheim.de', rolle: 'super_admin', klassenlehrer_von: null },
+  { id: 'u2', name: 'Nadine [Nachname]', email: 'nadine@realschule-schriesheim.de', rolle: 'projektleitung', klassenlehrer_von: null },
+  { id: 'u3', name: 'Hr. Müller', email: 'mueller@...', rolle: 'projektlehrer', klassenlehrer_von: '7a' },
+  { id: 'u4', name: 'Fr. Schmitt', email: 'schmitt@...', rolle: 'projektlehrer', klassenlehrer_von: null },
+  { id: 'u5', name: 'Fr. Scharmann', email: 'scharmann@...', rolle: 'projektlehrer', klassenlehrer_von: null },
+];
+
+const MOCK_PROJEKTE_ADMIN = [
+  { id: 'p1', titel: 'Fotografie & Bildbearbeitung', lehrer_id: 'u3', lehrer: 'Hr. Müller', kurzbeschreibung: 'Kamera-Arbeit und Bildbearbeitung',
+    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 7, max_klasse: 9, status: 'veroeffentlicht',
+    belegt: 12, erstwahl_wuensche: 18, zweitwahl_wuensche: 22, drittwahl_wuensche: 15 },
+  { id: 'p2', titel: 'Theater-Werkstatt', lehrer_id: 'u4', lehrer: 'Fr. Schmitt', kurzbeschreibung: 'Stück entwickeln, beim Schulfest aufführen',
+    max_plaetze: 15, min_teilnehmer: 8, min_klasse: 5, max_klasse: 9, status: 'veroeffentlicht',
+    belegt: 12, erstwahl_wuensche: 12, zweitwahl_wuensche: 14, drittwahl_wuensche: 8 },
+  { id: 'p3', titel: 'Weinberg-AG intensiv', lehrer_id: 'u5', lehrer: 'Fr. Scharmann', kurzbeschreibung: 'Arbeit im Weinberg',
+    max_plaetze: 10, min_teilnehmer: 5, min_klasse: 7, max_klasse: 9, status: 'veroeffentlicht',
+    belegt: 5, erstwahl_wuensche: 4, zweitwahl_wuensche: 3, drittwahl_wuensche: 5 },
+  { id: 'p4', titel: 'Schulband Vertiefung', lehrer_id: 'u1', lehrer: 'Hr. Kotzan', kurzbeschreibung: 'Songs einstudieren, Auftritt am Schulfest',
+    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 6, max_klasse: 9, status: 'veroeffentlicht',
+    belegt: 12, erstwahl_wuensche: 28, zweitwahl_wuensche: 12, drittwahl_wuensche: 6 },
+  { id: 'p5', titel: 'Robotik & Programmieren', lehrer_id: 'u3', lehrer: 'Hr. Müller', kurzbeschreibung: 'LEGO Mindstorms',
+    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 5, max_klasse: 8, status: 'veroeffentlicht',
+    belegt: 10, erstwahl_wuensche: 8, zweitwahl_wuensche: 11, drittwahl_wuensche: 9 },
+];
+
+const MOCK_TAUSCHWUENSCHE = [
+  { id: 't1', schueler: { code: '8A-T4P1', vorname: 'Anna', nachname: 'Schmidt', klasse: '8a' },
+    von_projekt: { id: 'p5', titel: 'Robotik & Programmieren' },
+    nach_projekt: { id: 'p4', titel: 'Schulband Vertiefung' },
+    begruendung: 'Ich spiele schon seit Jahren Gitarre und wäre gerne in der Schulband.',
+    created_at: '2026-07-14T09:23:00',
+    eins_zu_eins_moeglich: true,
+    tauschpartner: { code: '8B-M2K5', vorname: 'Lukas', nachname: 'Meier', klasse: '8b' }},
+  { id: 't2', schueler: { code: '7B-X3Y9', vorname: 'Mia', nachname: 'Becker', klasse: '7b' },
+    von_projekt: { id: 'p2', titel: 'Theater-Werkstatt' },
+    nach_projekt: { id: 'p1', titel: 'Fotografie & Bildbearbeitung' },
+    begruendung: 'Ich habe eine Kamera zu Weihnachten bekommen und möchte lernen, sie richtig zu benutzen.',
+    created_at: '2026-07-14T10:05:00',
+    eins_zu_eins_moeglich: false },
+  { id: 't3', schueler: { code: '9A-P8R4', vorname: 'Finn', nachname: 'Weber', klasse: '9a' },
+    von_projekt: { id: 'p3', titel: 'Weinberg-AG intensiv' },
+    nach_projekt: { id: 'p4', titel: 'Schulband Vertiefung' },
+    begruendung: 'Ich habe schon mit der Band geübt vor den Ferien.',
+    created_at: '2026-07-14T11:40:00',
+    eins_zu_eins_moeglich: false },
+];
+
+const MOCK_STATS = {
+  anzahl_schueler_gesamt: 455,
+  anzahl_projekte: 18,
+  anzahl_lehrer: 20,
+
+  // Phase-abhängig
+  angemeldet: 423,
+  noch_nicht_angemeldet: 32,
+
+  // Verteilung
+  verteilt_erstwahl: 342,
+  verteilt_zweitwahl: 62,
+  verteilt_drittwahl: 15,
+  nicht_verteilt: 4,
+};
+
+// Globale Mock-Daten (können sich durch User-Aktionen ändern)
+let mockSchueler = [
+  { code: '5A-B3X9', vorname: 'Lisa', nachname: 'Musterfrau', klasse: '5a', hat_gewaehlt: true, zuteilung: 'Kreatives Kochen' },
+  { code: '7B-A7K2', vorname: 'Max', nachname: 'Mustermann', klasse: '7b', hat_gewaehlt: true, zuteilung: 'Schulband' },
+  { code: '8A-T4P1', vorname: 'Anna', nachname: 'Schmidt', klasse: '8a', hat_gewaehlt: true, zuteilung: 'Robotik' },
+  { code: '9C-K7M2', vorname: 'Tom', nachname: 'Beispiel', klasse: '9c', hat_gewaehlt: true, zuteilung: 'Fotografie' },
+  { code: '6A-P8N3', vorname: 'Sophie', nachname: 'Keller', klasse: '6a', hat_gewaehlt: false, zuteilung: null },
+  { code: '7A-L5F2', vorname: 'Leon', nachname: 'Hofer', klasse: '7a', hat_gewaehlt: false, zuteilung: null },
+];
+
+let mockLehrerData = [...MOCK_LEHRER];
+let mockProjekteData = [...MOCK_PROJEKTE_ADMIN];
+let mockTauschData = [...MOCK_TAUSCHWUENSCHE];
+let mockUmbuchungen = [];
+
+// === Helper: CSV-Parse ===
+function parseCSV(csvText) {
+  const lines = csvText.trim().split('\n');
+  if (lines.length === 0) return { data: [], hasHeader: false };
+
+  // Prüfe erste Zeile auf Header
+  const possibleHeaders = lines[0].toLowerCase().split(',').map(h => h.trim());
+  const headerPatterns = ['klasse', 'vorname', 'nachname', 'name'];
+  const hasHeader = possibleHeaders.some(h => headerPatterns.some(p => h.includes(p)));
+
+  const startLine = hasHeader ? 1 : 0;
+  const data = [];
+
+  for (let i = startLine; i < lines.length; i++) {
+    const parts = lines[i].split(',').map(p => p.trim()).filter(p => p);
+    if (parts.length < 3) continue;
+
+    let klasse, nachname, vorname;
+
+    // Versuche Spalten zu identifizieren
+    if (possibleHeaders.includes('klasse') || (startLine === 1 && i > startLine)) {
+      // Header erkannt: Klasse, Nachname, Vorname
+      klasse = parts[0];
+      nachname = parts[1];
+      vorname = parts[2];
+    } else {
+      // Keine Header: Klasse, Nachname, Vorname
+      klasse = parts[0];
+      nachname = parts[1];
+      vorname = parts[2];
+    }
+
+    data.push({ klasse, nachname, vorname });
+  }
+
+  return { data, hasHeader };
+}
+
+// === Helper: Validierung ===
+function validateKlasse(klasse) {
+  return /^[5-9][a-zA-Z]$/.test(klasse.toLowerCase());
+}
+
+function generateAnmeldeCode(klasse) {
+  // Format: "7B-A7K2" — Klassenstufe + Buchstabe (uppercase) + Hyphen + 4 Zufallszeichen
+  // Sicherheit: crypto.getRandomValues() statt Math.random() (kryptographisch sicher)
+  const prefix = klasse.toUpperCase().substring(0, 2); // z.B. "7B"
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const randomBytes = new Uint32Array(4);
+  (window.crypto || window.msCrypto).getRandomValues(randomBytes);
+  let suffix = '';
+  for (let i = 0; i < 4; i++) {
+    suffix += chars[randomBytes[i] % chars.length];
+  }
+  return prefix + '-' + suffix;
+}
+
+// === Helper: Toast ===
+function showToast(message, type = 'success') {
+  const container = document.querySelector('.toast-container') || (() => {
+    const div = document.createElement('div');
+    div.className = 'toast-container';
+    document.body.appendChild(div);
+    return div;
+  })();
+
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => toast.remove(), 5000);
+}
+
+// === APP ===
+function App() {
+  const [phase, setPhase] = useState('anmeldung');
+  const [activeSection, setActiveSection] = useState('dashboard');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [modal, setModal] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const toggle = document.getElementById('mobile-nav-toggle');
+    if (toggle) toggle.onclick = () => setSidebarOpen(!sidebarOpen);
+  }, [sidebarOpen]);
+
+  // ESC-Taste schließt offene Modals (UX-Quick-Win)
+  useEffect(() => {
+    if (!modal) return;
+    const handler = (e) => {
+      if (e.key === 'Escape') setModal(null);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [modal]);
+
+  const navigate = (section) => {
+    setActiveSection(section);
+    setSidebarOpen(false);
+  };
+
+  const phaseLabels = {
+    setup: 'Setup-Phase',
+    anmeldung: 'Anmeldung läuft',
+    verteilung: 'Verteilung',
+    nachbearbeitung: 'Nachbearbeitung',
+    projekttage: 'Projekttage'
+  };
+
+  const navItems = [
+    { section: 'dashboard', label: '🏠 Dashboard', always: true },
+    { type: 'divider', label: 'Stammdaten' },
+    { section: 'schueler', label: '👨‍🎓 Schüler', always: true, badge: '455' },
+    { section: 'projekte', label: '📚 Projekte', always: true, badge: '18', recommended: phase === 'setup' },
+    { section: 'lehrer', label: '👨‍🏫 Lehrer', always: true, badge: '20' },
+    { type: 'divider', label: 'Ablauf' },
+    { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: '423/455', recommended: phase === 'anmeldung' },
+    { section: 'verteilung', label: '🎲 Verteilung', phases: ['verteilung', 'nachbearbeitung', 'projekttage'], recommended: phase === 'verteilung' },
+    { section: 'zuteilungen', label: '🎯 Zuteilungen', phases: ['nachbearbeitung', 'projekttage'] },
+    { section: 'umbuchung', label: '🔀 Manuelle Umbuchung', phases: ['nachbearbeitung', 'projekttage'] },
+    { section: 'tauschwuensche', label: '🔄 Tauschwünsche', phases: ['nachbearbeitung'], badge: '3', badgeType: 'orange', recommended: phase === 'nachbearbeitung' },
+    { section: 'export', label: '📥 Export & Aushang', phases: ['nachbearbeitung', 'projekttage'] },
+    { type: 'divider', label: 'System' },
+    { section: 'phase', label: '⚙️ Phase wechseln', always: true },
+    { section: 'einstellungen', label: '🛠️ Einstellungen', always: true },
+  ];
+
+  return html`
+    <div class="app">
+      <aside class=${"sidebar " + (sidebarOpen ? "mobile-open" : "")}>
+        <div class="sidebar-header">
+          <div class="sidebar-logo"><img src=${LOGO_SRC} alt="KRS" /></div>
+          <div class="sidebar-title">Projektwahl 2026</div>
+          <div class="sidebar-subtitle">Admin-Bereich</div>
+        </div>
+        <div class="sidebar-phase">📅 ${phaseLabels[phase]}</div>
+        <nav class="sidebar-nav">
+          ${navItems.map(item => {
+            if (item.type === 'divider') {
+              return html`<div class="nav-section">${item.label}</div>`;
+            }
+            const visible = item.always || (item.phases && item.phases.includes(phase));
+            if (!visible) return null;
+            const isActive = activeSection === item.section;
+            return html`
+              <div class=${"nav-item " + (isActive ? "active " : "") + (item.recommended ? "recommended" : "")}
+                   onClick=${() => navigate(item.section)}>
+                <span>${item.label}</span>
+                ${item.badge && html`<span class=${"badge " + (item.badgeType === 'orange' ? '' : 'badge-muted')}>${item.badge}</span>`}
+              </div>
+            `;
+          })}
+        </nav>
+      </aside>
+
+      <main class="main">
+        ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} />`}
+        ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} />`}
+        ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} />`}
+        ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} />`}
+        ${activeSection === 'anmeldungen' && html`<${AnmeldungenView} />`}
+        ${activeSection === 'verteilung' && html`<${VerteilungView} setModal=${setModal} />`}
+        ${activeSection === 'zuteilungen' && html`<${ZuteilungenView} />`}
+        ${activeSection === 'umbuchung' && html`<${UmbuchungView} setModal=${setModal} />`}
+        ${activeSection === 'tauschwuensche' && html`<${TauschwuenscheView} setModal=${setModal} />`}
+        ${activeSection === 'export' && html`<${ExportView} />`}
+        ${activeSection === 'phase' && html`<${PhaseView} phase=${phase} setPhase=${setPhase} />`}
+        ${activeSection === 'einstellungen' && html`<${EinstellungenView} />`}
+      </main>
+
+      ${modal}
+    </div>
+  `;
+}
+
+// === DASHBOARD ===
+function Dashboard({ phase, navigate }) {
+  const content = {
+    setup: {
+      title: 'Aktuelle Aufgabe: Setup',
+      subtitle: 'Bevor die Anmeldung starten kann, müssen Projekte angelegt und Lehrer eingeladen werden.',
+      tiles: [
+        { label: 'Projekte', value: 18, action: () => navigate('projekte'), recommended: true },
+        { label: 'Lehrer', value: 20, action: () => navigate('lehrer') },
+      ]
+    },
+    anmeldung: {
+      title: 'Anmeldungs-Phase läuft',
+      subtitle: 'Überwache die Anmeldungen und schließe die Phase, wenn genug Schüler sich angemeldet haben.',
+      tiles: [
+        { label: 'Anmeldungen', value: '423/455', sub: '93%', action: () => navigate('anmeldungen'), recommended: true },
+      ]
+    },
+    verteilung: {
+      title: 'Verteilung vorbereiten',
+      subtitle: 'Prüfe alle Daten, führe einen Probelauf durch und schreibe die Verteilung fest.',
+      tiles: [
+        { label: 'Verteilung', value: 'Start', action: () => navigate('verteilung'), recommended: true },
+      ]
+    },
+    nachbearbeitung: {
+      title: 'Nachbearbeitung läuft',
+      subtitle: 'Bearbeite Tauschwünsche und führe manuelle Umbuchungen durch.',
+      tiles: [
+        { label: 'Tauschwünsche', value: 3, action: () => navigate('tauschwuensche'), recommended: true },
+        { label: 'Umbuchungen', value: 'Manuell', action: () => navigate('umbuchung') },
+      ]
+    },
+    projekttage: {
+      title: 'Projekttage laufen',
+      subtitle: 'Die Projekttage sind in vollem Gang. Nimm nur noch notwendige Änderungen vor.',
+      tiles: [
+        { label: 'Export', value: 'Listen', action: () => navigate('export') },
+      ]
+    }
+  };
+
+  const cfg = content[phase];
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">${cfg.title}</h1>
+        <div class="main-subtitle">${cfg.subtitle}</div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      ${cfg.tiles.map(t => html`
+        <div class=${"dash-tile " + (t.recommended ? "highlight" : "")} onClick=${t.action}>
+          <div class="dash-tile-label">${t.label}</div>
+          <div class="dash-tile-value">${t.value}</div>
+          ${t.sub && html`<div class="dash-tile-sub">${t.sub}</div>`}
+        </div>
+      `)}
+    </div>
+
+    <div class="card">
+      <h2>📊 Schnelle Statistik</h2>
+      <div class="stat-row">
+        <div class="stat-label">Schüler</div>
+        <div class="stat-bar"><div class="stat-bar-fill w1" style="width:100%">455</div></div>
+        <div class="stat-value">100%</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-label">Projekte</div>
+        <div class="stat-bar"><div class="stat-bar-fill w1" style="width:100%">18</div></div>
+        <div class="stat-value">18</div>
+      </div>
+    </div>
+  `;
+}
+
+// === SCHÜLER ===
+function SchuelerView({ refreshKey }) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('alle');
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState(null);
+  const [importing, setImporting] = useState(false);
+
+  const gefiltert = mockSchueler.filter(s => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || s.vorname.toLowerCase().includes(q) || s.nachname.toLowerCase().includes(q) || s.code.toLowerCase().includes(q);
+    const matchFilter = filter === 'alle'
+      || (filter === 'angemeldet' && s.hat_gewaehlt)
+      || (filter === 'fehlt' && !s.hat_gewaehlt);
+    return matchSearch && matchFilter;
+  });
+
+  const handleCSVUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const csvText = evt.target.result;
+        const { data, hasHeader } = parseCSV(csvText);
+
+        // Validierung
+        const preview = data.map(row => {
+          const klasseFehler = !validateKlasse(row.klasse);
+          const nameFehler = !row.vorname || !row.nachname;
+          const isDuplicate = mockSchueler.some(s => s.vorname === row.vorname && s.nachname === row.nachname);
+
+          return {
+            ...row,
+            valid: !klasseFehler && !nameFehler && !isDuplicate,
+            errors: [
+              klasseFehler ? 'Klasse ungültig (5-9 und a-c)' : '',
+              nameFehler ? 'Vor- oder Nachname fehlt' : '',
+              isDuplicate ? 'Duplikat existiert bereits' : ''
+            ].filter(e => e)
+          };
+        });
+
+        setCsvPreview(preview);
+        setCsvFile(file);
+      } catch (err) {
+        showToast('CSV-Fehler: ' + err.message, 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const doImport = () => {
+    if (!csvPreview) return;
+
+    const validRows = csvPreview.filter(r => r.valid);
+    if (validRows.length === 0) {
+      showToast('Keine gültigen Zeilen zum Importieren', 'error');
+      return;
+    }
+
+    setImporting(true);
+
+    setTimeout(() => {
+      validRows.forEach(row => {
+        const code = generateAnmeldeCode(row.klasse);
+        mockSchueler.push({
+          code,
+          vorname: row.vorname,
+          nachname: row.nachname,
+          klasse: row.klasse.toLowerCase(),
+          hat_gewaehlt: false,
+          zuteilung: null
+        });
+      });
+
+      showToast(`${validRows.length} Schüler erfolgreich importiert!`, 'success');
+      setCsvPreview(null);
+      setCsvFile(null);
+      setImporting(false);
+    }, 500);
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">Schüler</h1>
+        <div class="main-subtitle">${mockSchueler.length} Schüler in den Klassen 5-9</div>
+      </div>
+      <div class="btn-group">
+        <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
+        <button class="btn btn-secondary" onClick=${() => document.getElementById('csv-input').click()}>📥 CSV importieren</button>
+        <button class="btn btn-primary">🖨️ Serienbriefe drucken</button>
+      </div>
+    </div>
+
+    ${csvPreview && html`
+      <div class="card">
+        <h2>CSV-Import Vorschau</h2>
+        <div class="csv-preview">
+          <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">
+            ${csvPreview.filter(r => r.valid).length} von ${csvPreview.length} Zeilen gültig
+            ${csvPreview.some(r => !r.valid) && html`
+              <span style="color:var(--error);">· ${csvPreview.filter(r => !r.valid).length} Fehler</span>
+            `}
+          </div>
+          <div style="max-height:300px;overflow-y:auto;">
+            ${csvPreview.map((row, idx) => html`
+              <div class="csv-row">
+                <div class="csv-cell"><strong>${row.klasse}</strong> ${row.vorname}</div>
+                <div class="csv-cell">${row.nachname}</div>
+                <div class=${"csv-status " + (row.valid ? "valid" : "error")}>${row.valid ? '✓' : '✗'}</div>
+              </div>
+            `)}
+          </div>
+        </div>
+        <div class="btn-group" style="margin-top:16px;">
+          <button class="btn btn-ghost" onClick=${() => setCsvPreview(null)}>Abbrechen</button>
+          <button class="btn btn-success" onClick=${doImport} disabled=${importing}>
+            ${importing ? '⏳ Wird importiert...' : '✓ Importieren'}
+          </button>
+        </div>
+      </div>
+    `}
+
+    <div class="card">
+      <div class="form-row">
+        <div class="input-group" style="margin:0;">
+          <label>Suchen</label>
+          <input type="text" value=${search} onInput=${e => setSearch(e.target.value)} placeholder="Name oder Code..." />
+        </div>
+        <div class="input-group" style="margin:0;">
+          <label>Filter</label>
+          <select value=${filter} onChange=${e => setFilter(e.target.value)}>
+            <option value="alle">Alle anzeigen</option>
+            <option value="angemeldet">Nur angemeldete</option>
+            <option value="fehlt">Noch nicht angemeldet</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Klasse</th>
+            <th>Status</th>
+            <th>Zuteilung</th>
+            <th>Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${gefiltert.length === 0 ? html`
+            <tr><td colspan="6">
+              <div class="empty-state">
+                <span class="empty-emoji">🔍</span>
+                <div class="empty-title">Keine Schüler gefunden</div>
+                <div class="empty-hint">${search || filter !== 'alle' ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
+              </div>
+            </td></tr>
+          ` : gefiltert.map(s => html`
+            <tr>
+              <td style="font-family:monospace;">${s.code}</td>
+              <td>${s.vorname} ${s.nachname}</td>
+              <td>${s.klasse}</td>
+              <td>${s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
+              <td>${s.zuteilung || '—'}</td>
+              <td class="actions-cell">
+                <button class="btn btn-ghost btn-small">Details</button>
+              </td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// === PROJEKTE ===
+function ProjekteView({ setModal, refreshKey }) {
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState(null);
+
+  const openCreateModal = () => {
+    setFormData({
+      id: 'p' + (mockProjekteData.length + 1),
+      titel: '',
+      kurzbeschreibung: '',
+      lehrer_id: '',
+      max_plaetze: 12,
+      min_teilnehmer: 6,
+      min_klasse: 5,
+      max_klasse: 9,
+      status: 'entwurf'
+    });
+    setEditingId('new');
+    showModal();
+  };
+
+  const openEditModal = (projekt) => {
+    setFormData({...projekt});
+    setEditingId(projekt.id);
+    showModal();
+  };
+
+  const showModal = () => {
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>
+        <div class="modal-content" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>${editingId === 'new' ? '➕ Neues Projekt' : '✏️ Projekt bearbeiten'}</h2>
+          <div class="input-group">
+            <label>Titel *</label>
+            <input type="text" value=${formData?.titel || ''} onInput=${e => setFormData({...formData, titel: e.target.value})} />
+          </div>
+          <div class="input-group">
+            <label>Kurzbeschreibung</label>
+            <textarea onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}>${formData?.kurzbeschreibung || ''}</textarea>
+          </div>
+          <div class="form-row">
+            <div class="input-group">
+              <label>Lehrer *</label>
+              <select value=${formData?.lehrer_id || ''} onChange=${e => setFormData({...formData, lehrer_id: e.target.value})}>
+                <option value="">Wählen...</option>
+                ${mockLehrerData.filter(l => l.rolle === 'projektlehrer' || l.rolle === 'super_admin').map(l => html`
+                  <option value=${l.id}>${l.name}</option>
+                `)}
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Status</label>
+              <select value=${formData?.status || 'entwurf'} onChange=${e => setFormData({...formData, status: e.target.value})}>
+                <option value="entwurf">Entwurf</option>
+                <option value="veroeffentlicht">Veröffentlicht</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="input-group">
+              <label>Min. Teilnehmer</label>
+              <input type="number" value=${formData?.min_teilnehmer || 6} onInput=${e => setFormData({...formData, min_teilnehmer: parseInt(e.target.value)})} />
+            </div>
+            <div class="input-group">
+              <label>Max. Plätze</label>
+              <input type="number" value=${formData?.max_plaetze || 12} onInput=${e => setFormData({...formData, max_plaetze: parseInt(e.target.value)})} />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="input-group">
+              <label>Min. Klassenstufe</label>
+              <select value=${formData?.min_klasse || 5} onChange=${e => setFormData({...formData, min_klasse: parseInt(e.target.value)})}>
+                ${[5, 6, 7, 8, 9].map(k => html`<option value=${k}>${k}</option>`)}
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Max. Klassenstufe</label>
+              <select value=${formData?.max_klasse || 9} onChange=${e => setFormData({...formData, max_klasse: parseInt(e.target.value)})}>
+                ${[5, 6, 7, 8, 9].map(k => html`<option value=${k}>${k}</option>`)}
+              </select>
+            </div>
+          </div>
+          <div class="btn-group" style="margin-top:20px;">
+            <button class="btn btn-ghost" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>Abbrechen</button>
+            ${editingId !== 'new' && html`
+              <button class="btn btn-danger" onClick=${() => {
+                const titel = formData?.titel || 'dieses Projekt';
+                if (!window.confirm(`Projekt "${titel}" wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`)) return;
+                mockProjekteData = mockProjekteData.filter(p => p.id !== editingId);
+                showToast('Projekt gelöscht', 'success');
+                setModal(null);
+                setFormData(null);
+                setEditingId(null);
+              }}>Löschen</button>
+            `}
+            <button class="btn btn-success" onClick=${() => {
+              if (!formData.titel || !formData.lehrer_id) {
+                showToast('Titel und Lehrer sind erforderlich', 'error');
+                return;
+              }
+              if (formData.max_plaetze < formData.min_teilnehmer) {
+                showToast('Max. Plätze müssen >= Min. Teilnehmer sein', 'error');
+                return;
+              }
+
+              if (editingId === 'new') {
+                mockProjekteData.push(formData);
+                showToast('Projekt erstellt!', 'success');
+              } else {
+                const idx = mockProjekteData.findIndex(p => p.id === editingId);
+                if (idx >= 0) mockProjekteData[idx] = formData;
+                showToast('Projekt aktualisiert!', 'success');
+              }
+              setModal(null);
+              setFormData(null);
+              setEditingId(null);
+            }}>Speichern</button>
+          </div>
+        </div>
+      </div>
+    `);
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">Projekte</h1>
+        <div class="main-subtitle">${mockProjekteData.length} Projekte angelegt</div>
+      </div>
+      <button class="btn btn-primary" onClick=${openCreateModal}>➕ Neues Projekt</button>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Titel</th>
+            <th>Lehrer</th>
+            <th>Plätze</th>
+            <th>Klassenstufen</th>
+            <th>Wünsche (1./2./3.)</th>
+            <th>Status</th>
+            <th>Aktionen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${mockProjekteData.length === 0 ? html`
+            <tr><td colspan="7">
+              <div class="empty-state">
+                <span class="empty-emoji">📋</span>
+                <div class="empty-title">Noch keine Projekte angelegt</div>
+                <div class="empty-hint">Klicke oben auf "➕ Neues Projekt", um das erste Projekt anzulegen.</div>
+              </div>
+            </td></tr>
+          ` : mockProjekteData.map(p => {
+            const ausgelastet = p.belegt >= p.max_plaetze;
+            const ueberbucht = p.erstwahl_wuensche > p.max_plaetze;
+            const lehrer = mockLehrerData.find(l => l.id === p.lehrer_id);
+            return html`
+              <tr>
+                <td><strong>${p.titel}</strong><br/><small style="color:var(--text-muted);">${p.kurzbeschreibung}</small></td>
+                <td>${lehrer?.name || p.lehrer}</td>
+                <td>
+                  ${p.belegt}/${p.max_plaetze}
+                  ${ausgelastet ? html`<span class="pill pill-success" style="margin-left:4px;">voll</span>` : ''}
+                </td>
+                <td>${p.min_klasse}-${p.max_klasse}</td>
+                <td>
+                  <span class="pill pill-wahl-1">${p.erstwahl_wuensche}</span>
+                  <span class="pill pill-wahl-2">${p.zweitwahl_wuensche}</span>
+                  <span class="pill pill-wahl-3">${p.drittwahl_wuensche}</span>
+                  ${ueberbucht ? html`<br/><small style="color:var(--krs-orange);">⚠️ überbucht</small>` : ''}
+                </td>
+                <td><span class="pill pill-info">${p.status}</span></td>
+                <td class="actions-cell">
+                  <button class="btn btn-ghost btn-small" onClick=${() => openEditModal(p)}>✏️ Bearbeiten</button>
+                </td>
+              </tr>
+            `;
+          })}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// === LEHRER ===
+function LehrerView({ setModal, refreshKey }) {
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState(null);
+
+  const openCreateModal = () => {
+    setFormData({
+      id: 'u' + (mockLehrerData.length + 1),
+      name: '',
+      email: '',
+      rolle: 'projektlehrer',
+      klassenlehrer_von: ''
+    });
+    setEditingId('new');
+    showModal();
+  };
+
+  const openEditModal = (lehrer) => {
+    setFormData({...lehrer});
+    setEditingId(lehrer.id);
+    showModal();
+  };
+
+  const showModal = () => {
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>
+        <div class="modal-content" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>${editingId === 'new' ? '➕ Lehrer einladen' : '✏️ Lehrer bearbeiten'}</h2>
+          <div class="input-group">
+            <label>Name *</label>
+            <input type="text" value=${formData?.name || ''} onInput=${e => setFormData({...formData, name: e.target.value})} />
+          </div>
+          <div class="input-group">
+            <label>E-Mail *</label>
+            <input type="email" value=${formData?.email || ''} onInput=${e => setFormData({...formData, email: e.target.value})} />
+          </div>
+          <div class="input-group">
+            <label>Rolle</label>
+            <select value=${formData?.rolle || 'projektlehrer'} onChange=${e => setFormData({...formData, rolle: e.target.value})}>
+              <option value="projektlehrer">Projektlehrer</option>
+              <option value="klassenlehrer">Klassenlehrer</option>
+              <option value="projektleitung">Projektleitung</option>
+            </select>
+          </div>
+          <div class="input-group">
+            <label>Klassenlehrer von (z.B. 7a)</label>
+            <input type="text" value=${formData?.klassenlehrer_von || ''} onInput=${e => setFormData({...formData, klassenlehrer_von: e.target.value})} placeholder="Optional" />
+          </div>
+          <div class="btn-group" style="margin-top:20px;">
+            <button class="btn btn-ghost" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>Abbrechen</button>
+            ${editingId !== 'new' && editingId !== 'u1' && html`
+              <button class="btn btn-danger" onClick=${() => {
+                const name = formData?.name || 'diesen Lehrer';
+                if (!window.confirm(`Lehrer "${name}" wirklich löschen?\n\nZugewiesene Projekte bleiben erhalten, verlieren aber diesen Lehrer. Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
+                mockLehrerData = mockLehrerData.filter(l => l.id !== editingId);
+                showToast('Lehrer gelöscht', 'success');
+                setModal(null);
+                setFormData(null);
+                setEditingId(null);
+              }}>Löschen</button>
+            `}
+            <button class="btn btn-success" onClick=${() => {
+              if (!formData.name || !formData.email) {
+                showToast('Name und E-Mail sind erforderlich', 'error');
+                return;
+              }
+
+              if (editingId === 'new') {
+                mockLehrerData.push(formData);
+                showToast('Lehrer hinzugefügt!', 'success');
+              } else {
+                const idx = mockLehrerData.findIndex(l => l.id === editingId);
+                if (idx >= 0) mockLehrerData[idx] = formData;
+                showToast('Lehrer aktualisiert!', 'success');
+              }
+              setModal(null);
+              setFormData(null);
+              setEditingId(null);
+            }}>Speichern</button>
+          </div>
+        </div>
+      </div>
+    `);
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">Lehrer</h1>
+        <div class="main-subtitle">Lehrer-Accounts und Rollen</div>
+      </div>
+      <button class="btn btn-primary" onClick=${openCreateModal}>➕ Lehrer einladen</button>
+    </div>
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>E-Mail</th><th>Rolle</th><th>Klassenlehrer von</th><th>Aktionen</th></tr>
+        </thead>
+        <tbody>
+          ${mockLehrerData.length === 0 ? html`
+            <tr><td colspan="5">
+              <div class="empty-state">
+                <span class="empty-emoji">👥</span>
+                <div class="empty-title">Noch keine Lehrer eingeladen</div>
+                <div class="empty-hint">Klicke oben auf "➕ Lehrer einladen", um den ersten Lehrer anzulegen.</div>
+              </div>
+            </td></tr>
+          ` : mockLehrerData.map(u => html`
+            <tr>
+              <td><strong>${u.name}</strong></td>
+              <td>${u.email}</td>
+              <td><span class=${"pill pill-" + (u.rolle === 'super_admin' ? 'error' : u.rolle === 'projektleitung' ? 'info' : 'success')}>${u.rolle}</span></td>
+              <td>${u.klassenlehrer_von || '—'}</td>
+              <td class="actions-cell"><button class="btn btn-ghost btn-small" onClick=${() => openEditModal(u)}>✏️ Bearbeiten</button></td>
+            </tr>
+          `)}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// === ANMELDUNGEN ===
+function AnmeldungenView() {
+  const klassenStatus = [
+    { klasse: '5a', schueler: 26, angemeldet: 26 },
+    { klasse: '5b', schueler: 25, angemeldet: 23 },
+    { klasse: '5c', schueler: 27, angemeldet: 24 },
+    { klasse: '6a', schueler: 28, angemeldet: 27 },
+    { klasse: '7b', schueler: 25, angemeldet: 25 },
+    { klasse: '8a', schueler: 24, angemeldet: 22 },
+    { klasse: '9c', schueler: 23, angemeldet: 20 },
+  ];
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">Anmelde-Status</h1>
+        <div class="main-subtitle">423 von 455 Schülern (93%)</div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary">📧 Erinnerung senden</button>
+        <button class="btn btn-accent">🔒 Anmeldung schließen</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📊 Anmelde-Status pro Klasse</h2>
+      ${klassenStatus.map(k => {
+        const prozent = Math.round((k.angemeldet / k.schueler) * 100);
+        const fehlt = k.schueler - k.angemeldet;
+        return html`
+          <div class="stat-row">
+            <div class="stat-label">Klasse ${k.klasse}</div>
+            <div class="stat-bar">
+              <div class=${"stat-bar-fill " + (prozent >= 95 ? 'w1' : prozent >= 80 ? 'w2' : 'w3')} style=${"width:" + prozent + "%"}>
+                ${k.angemeldet}/${k.schueler}
+              </div>
+            </div>
+            <div class="stat-value">${fehlt > 0 ? `${fehlt} fehlen` : '✓'}</div>
+          </div>
+        `;
+      })}
+    </div>
+
+    <div class="alert alert-info">
+      <strong>💡 Nächster Schritt:</strong> Wenn alle angemeldet sind (oder nach Deadline), kannst du die Anmeldung schließen und die Verteilung starten.
+    </div>
+  `;
+}
+
+// === VERTEILUNG ===
+function VerteilungView({ setModal }) {
+  const [preflight, setPreflight] = useState(null);
+  const [simulation, setSimulation] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [seed, setSeed] = useState('');
+  const [committed, setCommitted] = useState(false);
+
+  const testProjekte = mockProjekteData.map(p => ({
+    id: p.id, titel: p.titel, max_plaetze: p.max_plaetze, min_teilnehmer: p.min_teilnehmer,
+    min_klasse: p.min_klasse, max_klasse: p.max_klasse
+  }));
+
+  const generateTestSchueler = () => {
+    const result = [];
+    for (let i = 1; i <= 455; i++) {
+      const wahlIds = [];
+      while (wahlIds.length < 3) {
+        const id = testProjekte[Math.floor(Math.random() * testProjekte.length)].id;
+        if (!wahlIds.includes(id)) wahlIds.push(id);
+      }
+      result.push({
+        code: `S${String(i).padStart(3, '0')}`,
+        klassenstufe: 5 + Math.floor(Math.random() * 5),
+        wahlen: { erstwahl_id: wahlIds[0], zweitwahl_id: wahlIds[1], drittwahl_id: wahlIds[2] }
+      });
+    }
+    return result;
+  };
+
+  const runPreflight = () => {
+    const algo = new window.VerteilungsAlgorithmus();
+    const result = algo.preFlightCheck({ schueler: generateTestSchueler(), projekte: testProjekte });
+    setPreflight(result);
+  };
+
+  const runSimulation = () => {
+    setRunning(true);
+    setTimeout(() => {
+      const algo = new window.VerteilungsAlgorithmus();
+      const newSeed = seed || `sim-${Date.now()}`;
+      const result = algo.verteile({ schueler: generateTestSchueler(), projekte: testProjekte, seed: newSeed });
+      setSimulation(result);
+      setSeed(result.seed);
+      setRunning(false);
+    }, 800);
+  };
+
+  const commit = () => {
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => setModal(null)}>
+        <div class="modal-content" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => setModal(null)} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>⚠️ Verteilung festschreiben</h2>
+          <p>Bist du sicher, dass du diese Verteilung festschreiben willst?</p>
+          <div class="alert alert-warning">
+            <strong>Das bedeutet:</strong><br/>
+            • Alle Schüler werden den Projekten zugewiesen<br/>
+            • Die Verteilung ist dann "aktiv"<br/>
+            • Umbuchungen sind danach nur noch manuell möglich<br/>
+            • Seed wird mit gespeichert für spätere Nachvollziehbarkeit
+          </div>
+          <div class="btn-group" style="margin-top:16px;">
+            <button class="btn btn-ghost" onClick=${() => setModal(null)}>Abbrechen</button>
+            <button class="btn btn-success" onClick=${() => { setCommitted(true); setModal(null); }}>✓ Ja, festschreiben</button>
+          </div>
+        </div>
+      </div>
+    `);
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">🎲 Verteilung</h1>
+        <div class="main-subtitle">Random Serial Dictatorship mit reproduzierbarem Seed</div>
+      </div>
+    </div>
+
+    ${committed ? html`
+      <div class="alert alert-success">
+        <strong>✓ Verteilung festgeschrieben!</strong><br/>
+        Die Zuteilungen sind aktiv. Seed: <code>${seed}</code>
+      </div>
+    ` : null}
+
+    <div class="phase-tabs">
+      <div class=${"phase-tab " + (!preflight ? "active" : "")}>1. Pre-Flight</div>
+      <div class=${"phase-tab " + (preflight && !simulation ? "active" : "")}>2. Simulation</div>
+      <div class=${"phase-tab " + (simulation && !committed ? "active" : "")}>3. Festschreiben</div>
+    </div>
+
+    <div class="card">
+      <h2>Schritt 1: Pre-Flight-Check</h2>
+      <p>Bevor die Verteilung läuft, prüfen wir: Passen Plätze und Schüler? Gibt es Überbuchungen? Wer hat sich nicht angemeldet?</p>
+
+      ${!preflight ? html`
+        <button class="btn btn-primary" onClick=${runPreflight}>Pre-Flight-Check starten</button>
+      ` : html`
+        <div class=${"alert " + (preflight.ok ? "alert-success" : "alert-error")}>
+          ${preflight.ok ? '✓ Pre-Flight erfolgreich — Verteilung kann laufen.' : '❌ Es gibt Blocker für die Verteilung!'}
+        </div>
+
+        ${preflight.fehler.length > 0 && html`
+          <h3 style="color:var(--error);">Fehler:</h3>
+          ${preflight.fehler.map(f => html`<div class="alert alert-error">${f.message}</div>`)}
+        `}
+
+        ${preflight.warnungen.length > 0 && html`
+          <h3 style="color:var(--krs-gelb-dark);">Warnungen:</h3>
+          ${preflight.warnungen.map(w => html`<div class="alert alert-warning">${w.message}</div>`)}
+        `}
+
+        <button class="btn btn-ghost btn-small" onClick=${() => setPreflight(null)}>Erneut prüfen</button>
+      `}
+    </div>
+
+    ${preflight?.ok && html`
+      <div class="card">
+        <h2>Schritt 2: Probelauf</h2>
+        <p>Beim Probelauf wird verteilt, aber noch nichts gespeichert. Du kannst verschiedene Seeds ausprobieren.</p>
+
+        <div class="input-group">
+          <label>Seed (optional — leer lassen für zufällig)</label>
+          <input type="text" value=${seed} onInput=${e => setSeed(e.target.value)} placeholder="z.B. projekttage-2026-v1" />
+        </div>
+
+        <button class="btn btn-primary" onClick=${runSimulation} disabled=${running}>
+          ${running ? '⏳ Läuft...' : '▶️ Simulation starten'}
+        </button>
+
+        ${simulation && html`
+          <div class="alert alert-info" style="margin-top:16px;">
+            <strong>Simulation fertig</strong> · Seed: <code>${simulation.seed}</code> · Dauer: <1 Sekunde
+          </div>
+
+          <h3>Ergebnis der Simulation</h3>
+          <div class="stat-row">
+            <div class="stat-label">1. Wahl</div>
+            <div class="stat-bar"><div class="stat-bar-fill w1" style=${"width:" + simulation.statistik.prozent_erstwahl + "%"}>${simulation.statistik.erstwahl} (${simulation.statistik.prozent_erstwahl}%)</div></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-label">2. Wahl</div>
+            <div class="stat-bar"><div class="stat-bar-fill w2" style=${"width:" + simulation.statistik.prozent_zweitwahl + "%"}>${simulation.statistik.zweitwahl} (${simulation.statistik.prozent_zweitwahl}%)</div></div>
+          </div>
+          <div class="stat-row">
+            <div class="stat-label">3. Wahl</div>
+            <div class="stat-bar"><div class="stat-bar-fill w3" style=${"width:" + simulation.statistik.prozent_drittwahl + "%"}>${simulation.statistik.drittwahl} (${simulation.statistik.prozent_drittwahl}%)</div></div>
+          </div>
+          ${simulation.statistik.nicht_zugeteilt > 0 && html`
+            <div class="stat-row">
+              <div class="stat-label">Manuell</div>
+              <div class="stat-bar"><div class="stat-bar-fill none" style=${"width:" + (simulation.statistik.nicht_zugeteilt / simulation.statistik.gesamt_schueler * 100) + "%"}>${simulation.statistik.nicht_zugeteilt}</div></div>
+            </div>
+          `}
+
+          <h3>Projekt-Auslastung</h3>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Projekt</th><th>Belegt</th><th>Status</th></tr></thead>
+              <tbody>
+                ${simulation.projekte_auslastung.map(p => html`
+                  <tr>
+                    <td>${p.titel}</td>
+                    <td>${p.belegt}/${p.max}</td>
+                    <td>
+                      ${p.belegt === p.max ? html`<span class="pill pill-success">voll</span>` :
+                        p.unter_minimum ? html`<span class="pill pill-error">⚠️ unter Minimum</span>` :
+                        html`<span class="pill pill-info">okay</span>`}
+                    </td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="btn-group" style="margin-top:16px;">
+            <button class="btn btn-ghost" onClick=${runSimulation}>🔄 Mit anderem Seed</button>
+            <button class="btn btn-success" onClick=${commit}>✓ Diese Verteilung festschreiben</button>
+          </div>
+        `}
+      </div>
+    `}
+  `;
+}
+
+// === ZUTEILUNGEN ===
+function ZuteilungenView() {
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">🎯 Zuteilungen</h1>
+    </div>
+    <div class="alert alert-info">Hier sehe ich alle 455 Zuteilungen, kann nach Klasse / Projekt filtern und einzelne Schüler manuell umbuchen.</div>
+    <div class="card">
+      <h2>Übersicht (gekürzt)</h2>
+      <p>Im echten Admin hier:</p>
+      <ul>
+        <li>Suche + Filter (Klasse, Projekt, Wahl-Nr.)</li>
+        <li>Pro Schüler: Aktuelles Projekt, Wunsch-Reihenfolge, Button "Umbuchen"</li>
+        <li>Bulk-Aktionen (mehrere Schüler markieren + verschieben)</li>
+        <li>Export pro Projekt/Klasse</li>
+      </ul>
+    </div>
+  `;
+}
+
+// === MANUELLE UMBUCHUNG ===
+function UmbuchungView({ setModal }) {
+  const [searchText, setSearchText] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [reason, setReason] = useState('');
+
+  const searchResults = mockSchueler.filter(s => {
+    const q = searchText.toLowerCase();
+    return q && (s.code.toLowerCase().includes(q) || s.vorname.toLowerCase().includes(q) || s.nachname.toLowerCase().includes(q));
+  }).slice(0, 5);
+
+  const handleUmbuchung = () => {
+    if (!selectedStudent || !selectedProject || reason.length < 10) {
+      showToast('Bitte alle Felder ausfüllen (Grund mind. 10 Zeichen)', 'error');
+      return;
+    }
+
+    // Umbuchung speichern
+    mockUmbuchungen.push({
+      timestamp: new Date().toISOString(),
+      schueler: selectedStudent,
+      altes_projekt: selectedStudent.zuteilung,
+      neues_projekt: selectedProject,
+      grund: reason
+    });
+
+    // Schüler aktualisieren
+    selectedStudent.zuteilung = selectedProject;
+
+    showToast(`${selectedStudent.vorname} erfolgreich in ${selectedProject} umgebucht!`, 'success');
+    setSearchText('');
+    setSelectedStudent(null);
+    setSelectedProject(null);
+    setReason('');
+  };
+
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">🔀 Manuelle Umbuchung</h1>
+      <div class="main-subtitle">Einzelne Schüler in andere Projekte verschieben</div>
+    </div>
+
+    <div class="card">
+      <h2>Schüler suchen</h2>
+      <div class="input-group">
+        <label>Code oder Name</label>
+        <input type="text" value=${searchText} onInput=${e => setSearchText(e.target.value)} placeholder="z.B. 8A-T4P1 oder Anna..." />
+      </div>
+
+      ${searchText && searchResults.length > 0 && html`
+        <div style="margin-top:12px;">
+          ${searchResults.map(s => html`
+            <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;cursor:pointer;${selectedStudent?.code === s.code ? 'background:var(--krs-blau-lighter);border-color:var(--krs-blau);' : ''}" onClick=${() => setSelectedStudent(s)}>
+              <strong>${s.vorname} ${s.nachname}</strong> <span style="color:var(--text-muted);">${s.code} · ${s.klasse}</span><br/>
+              <small>Aktuell: ${s.zuteilung || 'Nicht zugeteilt'}</small>
+            </div>
+          `)}
+        </div>
+      `}
+    </div>
+
+    ${selectedStudent && html`
+      <div class="card">
+        <h2>Umbuchung für ${selectedStudent.vorname} ${selectedStudent.nachname}</h2>
+
+        <div class="input-group">
+          <label>Neues Projekt</label>
+          <select value=${selectedProject || ''} onChange=${e => setSelectedProject(e.target.value)}>
+            <option value="">— Wählen —</option>
+            ${mockProjekteData.filter(p => p.belegt < p.max_plaetze && p.id !== selectedStudent.zuteilung).map(p => html`
+              <option value=${p.titel}>${p.titel} (${p.belegt}/${p.max_plaetze})</option>
+            `)}
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Grund (mindestens 10 Zeichen)</label>
+          <textarea placeholder="Warum wird dieser Schüler umgebucht?" value=${reason} onInput=${e => setReason(e.target.value)}></textarea>
+          <small>${reason.length}/10 Zeichen</small>
+        </div>
+
+        <div class="btn-group">
+          <button class="btn btn-ghost" onClick=${() => { setSelectedStudent(null); setSearchText(''); }}>Abbrechen</button>
+          <button class="btn btn-primary" onClick=${handleUmbuchung} disabled=${!selectedProject || reason.length < 10}>🔀 Umbuchen</button>
+        </div>
+      </div>
+
+      ${mockUmbuchungen.length > 0 && html`
+        <div class="card">
+          <h2>Letzte Umbuchungen</h2>
+          <div class="table-wrapper">
+            <table>
+              <thead><tr><th>Schüler</th><th>Von</th><th>Zu</th><th>Grund</th><th>Zeit</th></tr></thead>
+              <tbody>
+                ${mockUmbuchungen.slice().reverse().map(u => html`
+                  <tr>
+                    <td>${u.schueler.vorname} ${u.schueler.nachname}</td>
+                    <td>${u.altes_projekt || '—'}</td>
+                    <td><strong>${u.neues_projekt}</strong></td>
+                    <td><small>${u.grund}</small></td>
+                    <td><small>${new Date(u.timestamp).toLocaleString('de-DE')}</small></td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `}
+    `}
+  `;
+}
+
+// === TAUSCHWÜNSCHE ===
+function TauschwuenscheView({ setModal }) {
+  const [wuensche, setWuensche] = useState(mockTauschData);
+
+  const genehmigen = (t, oneToOne = false) => {
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => setModal(null)}>
+        <div class="modal-content" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => setModal(null)} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>${oneToOne ? '🔁 1:1-Tausch genehmigen' : '✓ Tauschwunsch genehmigen'}</h2>
+          ${oneToOne ? html`
+            <p>
+              <strong>${t.schueler.vorname} ${t.schueler.nachname}</strong> (${t.schueler.klasse})
+              tauscht mit <strong>${t.tauschpartner.vorname} ${t.tauschpartner.nachname}</strong> (${t.tauschpartner.klasse}).
+            </p>
+            <div class="swap-highlight">
+              ${t.schueler.vorname}: ${t.von_projekt.titel} → ${t.nach_projekt.titel}<br/>
+              ${t.tauschpartner.vorname}: ${t.nach_projekt.titel} → ${t.von_projekt.titel}
+            </div>
+            <p><strong>Vorteile:</strong> Beide bekommen ihren Wunsch, keine Plätze werden freigegeben oder belegt.</p>
+          ` : html`
+            <p>Zuweisung für <strong>${t.schueler.vorname} ${t.schueler.nachname}</strong> (${t.schueler.klasse}):</p>
+            <p>${t.von_projekt.titel} → <strong>${t.nach_projekt.titel}</strong></p>
+          `}
+          <div class="btn-group" style="margin-top:16px;">
+            <button class="btn btn-ghost" onClick=${() => setModal(null)}>Abbrechen</button>
+            <button class="btn btn-success" onClick=${() => {
+              setWuensche(wuensche.filter(w => w.id !== t.id && (!oneToOne || w.schueler.code !== t.tauschpartner?.code)));
+              setModal(null);
+              showToast('Tauschwunsch genehmigt!', 'success');
+            }}>✓ Genehmigen und tauschen</button>
+          </div>
+        </div>
+      </div>
+    `);
+  };
+
+  const ablehnen = (t) => {
+    setModal(html`
+      <div class="modal-overlay" onClick=${() => setModal(null)}>
+        <div class="modal-content" onClick=${e => e.stopPropagation()}>
+          <button class="modal-close" onClick=${() => setModal(null)} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <h2>✗ Tauschwunsch ablehnen</h2>
+          <p>Warum wird der Wunsch von <strong>${t.schueler.vorname} ${t.schueler.nachname}</strong> abgelehnt?</p>
+          <div class="input-group">
+            <label>Begründung (wird dem Schüler mitgeteilt)</label>
+            <textarea placeholder="z.B. Zielprojekt ist voll, kein Tauschpartner verfügbar..."></textarea>
+          </div>
+          <div class="btn-group">
+            <button class="btn btn-ghost" onClick=${() => setModal(null)}>Abbrechen</button>
+            <button class="btn btn-danger" onClick=${() => { setWuensche(wuensche.filter(w => w.id !== t.id)); setModal(null); showToast('Tauschwunsch abgelehnt!', 'success'); }}>✗ Ablehnen</button>
+          </div>
+        </div>
+      </div>
+    `);
+  };
+
+  const oneToOneCount = wuensche.filter(w => w.eins_zu_eins_moeglich).length;
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">🔄 Tauschwünsche</h1>
+        <div class="main-subtitle">${wuensche.length} offene Wünsche${oneToOneCount > 0 ? ` · ${oneToOneCount} mit 1:1-Tausch möglich` : ''}</div>
+      </div>
+    </div>
+
+    ${oneToOneCount > 0 && html`
+      <div class="alert alert-success">
+        🎯 <strong>${oneToOneCount} 1:1-Tausch${oneToOneCount > 1 ? 'e' : ''} erkannt!</strong> Genehmigung mit einem Klick möglich — beide Schüler bekommen ihren Wunsch.
+      </div>
+    `}
+
+    ${wuensche.length === 0 && html`
+      <div class="card">
+        <div class="empty-state">
+          <span class="empty-emoji">✨</span>
+          <div class="empty-title">Keine offenen Tauschwünsche</div>
+          <div class="empty-hint">Alle Schüler sind mit ihrer Zuteilung zufrieden — oder es wurden noch keine Wünsche eingereicht.</div>
+        </div>
+      </div>
+    `}
+
+    ${wuensche.map(t => html`
+      <div class="card" style=${t.eins_zu_eins_moeglich ? "border-left:4px solid var(--success);" : ""}>
+        <div style="display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:200px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <strong style="font-size:16px;">${t.schueler.vorname} ${t.schueler.nachname}</strong>
+              <span class="pill pill-info">${t.schueler.klasse}</span>
+              <span style="font-family:monospace;color:var(--text-muted);font-size:13px;">${t.schueler.code}</span>
+            </div>
+            <div style="margin-bottom:8px;">
+              <strong>${t.von_projekt.titel}</strong>
+              <span style="color:var(--text-muted);">→</span>
+              <strong>${t.nach_projekt.titel}</strong>
+            </div>
+            <div style="padding:10px;background:var(--bg-subtle);border-radius:8px;font-size:14px;margin-bottom:8px;">
+              "${t.begruendung}"
+            </div>
+            <small style="color:var(--text-muted);">
+              ${new Date(t.created_at).toLocaleString('de-DE')}
+            </small>
+          </div>
+          <div class="btn-group" style="flex-direction:column;">
+            ${t.eins_zu_eins_moeglich && html`
+              <button class="btn btn-success" onClick=${() => genehmigen(t, true)}>
+                🔁 1:1-Tausch genehmigen<br/>
+                <small style="font-weight:400;">mit ${t.tauschpartner.vorname}</small>
+              </button>
+            `}
+            <button class="btn btn-primary btn-small" onClick=${() => genehmigen(t, false)}>
+              ✓ Genehmigen
+            </button>
+            <button class="btn btn-ghost btn-small" onClick=${() => ablehnen(t)}>
+              ✗ Ablehnen
+            </button>
+          </div>
+        </div>
+      </div>
+    `)}
+
+    ${wuensche.length === 0 && html`
+      <div class="card text-center" style="padding:40px;">
+        <div style="font-size:48px;margin-bottom:12px;">✨</div>
+        <h2 style="margin:0;">Keine offenen Tauschwünsche</h2>
+        <p>Alle Wünsche sind bearbeitet!</p>
+      </div>
+    `}
+  `;
+}
+
+// === EXPORT ===
+function ExportView() {
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">📥 Export & Aushang</h1>
+    </div>
+    <div class="dash-grid">
+      <div class="dash-tile">
+        <div class="dash-tile-label">CSV</div>
+        <div class="dash-tile-value" style="font-size:18px;">Gesamtliste</div>
+        <div class="dash-tile-sub">Alle 455 Zuteilungen</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Herunterladen</button>
+      </div>
+      <div class="dash-tile">
+        <div class="dash-tile-label">PDF</div>
+        <div class="dash-tile-value" style="font-size:18px;">Klassenlisten</div>
+        <div class="dash-tile-sub">24 PDFs, eines pro Klasse</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
+      </div>
+      <div class="dash-tile">
+        <div class="dash-tile-label">PDF</div>
+        <div class="dash-tile-value" style="font-size:18px;">Aushang pro Klasse</div>
+        <div class="dash-tile-sub">Nur Codes, DSGVO-konform</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
+      </div>
+      <div class="dash-tile">
+        <div class="dash-tile-label">PDF</div>
+        <div class="dash-tile-value" style="font-size:18px;">Teilnehmerlisten</div>
+        <div class="dash-tile-sub">Pro Projekt, für Lehrer</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
+      </div>
+    </div>
+  `;
+}
+
+// === PHASE ===
+function PhaseView({ phase, setPhase }) {
+  const phases = [
+    { id: 'setup', label: 'Setup', desc: 'Projekte anlegen, Lehrer einladen' },
+    { id: 'anmeldung', label: 'Anmeldung', desc: 'Schüler wählen ihre Projekte' },
+    { id: 'verteilung', label: 'Verteilung', desc: 'Zuteilung läuft' },
+    { id: 'nachbearbeitung', label: 'Nachbearbeitung', desc: 'Tauschwünsche, Umbuchungen' },
+    { id: 'projekttage', label: 'Projekttage', desc: 'Die Tage laufen' },
+  ];
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">⚙️ Phase wechseln</h1>
+    </div>
+    <div class="alert alert-warning">
+      <strong>⚠️ Vorsicht:</strong> Phasenwechsel bestimmt, was Schüler und Lehrer sehen. Nur wechseln, wenn wirklich soweit.
+    </div>
+    <div class="card">
+      ${phases.map(p => html`
+        <div style=${"padding:14px;border:2px solid " + (p.id === phase ? 'var(--krs-blau)' : 'var(--border)') + ";border-radius:8px;margin-bottom:10px;cursor:pointer;" + (p.id === phase ? 'background:var(--krs-blau-lighter);' : 'background:white;')} onClick=${() => setPhase(p.id)}>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style=${"width:20px;height:20px;border-radius:50%;border:2px solid " + (p.id === phase ? 'var(--krs-blau)' : 'var(--border)') + ";" + (p.id === phase ? 'background:var(--krs-blau);' : '')}></div>
+            <div style="flex:1;">
+              <strong>${p.label}</strong>${p.id === phase ? ' (aktuell)' : ''}
+              <div style="color:var(--text-muted);font-size:13px;">${p.desc}</div>
+            </div>
+          </div>
+        </div>
+      `)}
+    </div>
+  `;
+}
+
+// === EINSTELLUNGEN ===
+function EinstellungenView() {
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">🛠️ Einstellungen</h1>
+    </div>
+    <div class="card">
+      <h2>Termine</h2>
+      <div class="form-row">
+        <div class="input-group">
+          <label>Anmelde-Deadline</label>
+          <input type="text" value="2026-07-10 23:59" />
+        </div>
+        <div class="input-group">
+          <label>Tausch-Deadline</label>
+          <input type="text" value="2026-07-17 23:59" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="input-group">
+          <label>Projekttage Beginn</label>
+          <input type="text" value="2026-07-21" />
+        </div>
+        <div class="input-group">
+          <label>Projekttage Ende</label>
+          <input type="text" value="2026-07-23" />
+        </div>
+      </div>
+      <button class="btn btn-primary">Speichern</button>
+    </div>
+  `;
+}
+
+render(html`<${App} />`, document.getElementById('app'));
+</script>
+</body>
+</html>
