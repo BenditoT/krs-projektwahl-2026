@@ -148,17 +148,6 @@ footer a:hover{text-decoration:underline}
 </style>
 </head>
 <body>
-<div class="demo-badge">KLICKPROTOTYP</div>
-<div class="phase-switcher">
-  <label style="margin-right:6px;font-weight:600;color:var(--text-muted);">Phase (Test):</label>
-  <select id="phase-switcher">
-    <option value="setup">Setup</option>
-    <option value="anmeldung" selected>Anmeldung</option>
-    <option value="verteilung">Verteilung läuft</option>
-    <option value="nachbearbeitung">Ergebnisse</option>
-    <option value="projekttage">Projekttage</option>
-  </select>
-</div>
 <div id="app"></div>
 
 <script type="module">
@@ -515,7 +504,6 @@ function ProjektWahl({ schueler, projekte, wahlen, getWahlNr, onProjektClick, on
             <div class=${"projekt-card " + cls} onClick=${() => onProjektClick(p.id)}>
               ${nr > 0 && html`<div class="wahl-badge">${nr}</div>`}
               <div class="projekt-titel">${p.titel}</div>
-              <div class="projekt-lehrer">mit ${p.lehrer}</div>
               <div class="projekt-beschreibung">${p.beschreibung}</div>
               <div class="projekt-klassen">Klassen ${p.min_klasse}–${p.max_klasse}</div>
             </div>
@@ -562,7 +550,6 @@ function FertigAngemeldet({ schueler, wahlen, projekte, onClose }) {
           <div class=${"projekt-card selected-" + n} style="margin-bottom:12px;cursor:default;">
             <div class="wahl-badge">${n}</div>
             <div class="projekt-titel">${p?.titel}</div>
-            <div class="projekt-lehrer">mit ${p?.lehrer}</div>
           </div>
         `;
       })}
@@ -628,7 +615,7 @@ function MeinErgebnis({ schueler, projekte, onTausch, onClose, phase }) {
     <div class=${"ergebnis-box " + wahlLabel.color}>
       <div class="ergebnis-wahl-label">${wahlLabel.text}</div>
       <div class="ergebnis-projekt-titel">${projekt.titel}</div>
-      <div class="ergebnis-lehrer">mit ${projekt.lehrer} · ${projekt.ort}</div>
+      <div class="ergebnis-lehrer">${projekt.ort}</div>
       <div class="ergebnis-beschreibung">${projekt.beschreibung}</div>
     </div>
     <div class="card">
