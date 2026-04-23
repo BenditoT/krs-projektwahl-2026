@@ -50,7 +50,7 @@ body{background:var(--bg);color:var(--text);line-height:1.55;min-height:100vh}
 .badge.badge-muted{background:rgba(255,255,255,0.2)}
 
 /* === HAUPTBEREICH === */
-.main{padding:24px;max-width:100%;overflow-x:hidden}
+.main{padding:24px;max-width:100%;overflow-x:hidden;position:relative;}
 .main-header{margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
 .main-title{font-size:24px;font-weight:700;margin:0;letter-spacing:-0.4px}
 .main-subtitle{color:var(--text-muted);font-size:14px;margin-top:4px}
@@ -214,7 +214,13 @@ window.KRS_SUPABASE = {
   'use strict';
 
   const CFG = window.KRS_SUPABASE || {};
+  // v22.1: Test-Override — mit ?forceMode=demo läuft die App im Demo-Modus
+  // gegen window.mock*Data (in-memory), auch wenn Supabase-Config geladen ist.
+  // Für Playwright-E2E-Tests gegen Produktiv-Build ohne DB-Mutation.
+  const _qs = new URLSearchParams((typeof location !== 'undefined' ? location.search : ''));
+  const FORCE_DEMO = _qs.get('forceMode') === 'demo' || window.__KRS_FORCE_DEMO === true;
   const HAS_SUPABASE =
+    !FORCE_DEMO &&
     !!CFG.url &&
     !!(CFG.publishableKey || CFG.anonKey) &&
     typeof window.supabase !== 'undefined';
@@ -708,7 +714,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v22';
+  window.KRS_VERSION = 'v23';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -722,7 +728,7 @@ window.KRS_SUPABASE = {
 <!-- ============================================ -->
 <div id="loginGate" style="position:fixed;inset:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#4A6A83 0%,#3A5468 50%,#2A3E4C 100%);z-index:10000;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
   <div style="background:rgba(255,255,255,0.97);border-radius:16px;padding:2.5rem 2rem;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.35);text-align:center;">
-    <div style="width:72px;height:72px;margin:0 auto 1rem;border-radius:16px;background:linear-gradient(135deg,#4A6A83,#E87722,#F5B335);display:flex;align-items:center;justify-content:center;color:white;font-weight:800;font-size:28px;letter-spacing:1px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">KRS</div>
+    <img id="login-logo" alt="KRS" style="width:72px;height:auto;margin:0 auto 1rem;display:block;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);" />
     <h2 style="color:#2A3E4C;margin:0 0 0.25rem;font-size:1.35rem;">Admin-Dashboard</h2>
     <p id="gateSubtitle" style="color:#6C7A87;margin:0 0 1.5rem;font-size:0.9rem;">KRS Projektwahl 2026 · Anmeldung erforderlich</p>
     <div id="gateLoading" style="display:none;padding:1rem;color:#4A6A83;font-size:0.9rem;">⏳ Sitzung wird geprüft…</div>
@@ -6131,6 +6137,8 @@ function App() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState(mode === 'produktiv');
   const [loadError, setLoadError] = useState(null);
+  // Task #1: Rolle des eingeloggten Users (default super_admin für Demo-Modus)
+  const [currentUserRolle, setCurrentUserRolle] = useState('super_admin');
 
   // Zentrales Daten-Lade — mutiert die Mock-Arrays in-place.
   const loadAll = useCallback(async () => {
@@ -6187,7 +6195,7 @@ function App() {
     }
   }, [service, mode]);
 
-  // Initial-Load + Phase aus DB
+  // Initial-Load + Phase aus DB + Rolle des eingeloggten Users
   useEffect(() => {
     if (mode !== 'produktiv') return;
     (async () => {
@@ -6197,6 +6205,11 @@ function App() {
       } catch (err) {
         console.warn('[admin] getPhase failed:', err);
       }
+      // Task #1: Rolle laden
+      try {
+        const dbUser = await service.getCurrentDbUser();
+        if (dbUser?.rolle) setCurrentUserRolle(dbUser.rolle);
+      } catch (e) { console.warn('[KRS] role fetch:', e); }
     })();
     loadAll();
   }, [mode, service, loadAll]);
@@ -6250,7 +6263,21 @@ function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [modal]);
 
+  // Task #1: Erlaubte Sections pro Rolle
+  const ALLOWED_SECTIONS = {
+    super_admin: null, // null = alle erlaubt
+    projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback']),
+    klassenlehrer: new Set(['dashboard', 'anmeldungen']),
+    projektlehrer: new Set(['dashboard', 'projekte']),
+  };
+  const allowedSet = ALLOWED_SECTIONS[currentUserRolle] || null;
+  const isAllowed = (section) => !allowedSet || allowedSet.has(section);
+
   const navigate = (section) => {
+    if (!isAllowed(section)) {
+      showToast('Kein Zugriff auf diesen Bereich.', 'error');
+      return;
+    }
     setActiveSection(section);
     setSidebarOpen(false);
   };
@@ -6288,6 +6315,7 @@ function App() {
     { type: 'divider', label: 'System' },
     { section: 'phase', label: '⚙️ Phase wechseln', always: true },
     { section: 'einstellungen', label: '🛠️ Einstellungen', always: true },
+    { section: 'feedback', label: '💬 Feedback', always: true },
   ];
 
   return html`
@@ -6322,9 +6350,12 @@ function App() {
             }
             const visible = item.always || (item.phases && item.phases.includes(phase));
             if (!visible) return null;
+            // Task #1: Rollen-Filter
+            if (!isAllowed(item.section)) return null;
             const isActive = activeSection === item.section;
             return html`
               <div class=${"nav-item " + (isActive ? "active " : "") + (item.recommended ? "recommended" : "")}
+                   data-section=${item.section}
                    onClick=${() => navigate(item.section)}>
                 <span>${item.label}</span>
                 ${item.badge && html`<span class=${"badge " + (item.badgeType === 'orange' ? '' : 'badge-muted')}>${item.badge}</span>`}
@@ -6335,6 +6366,10 @@ function App() {
       </aside>
 
       <main class="main">
+        <!-- Task #8: Phase-Badge oben rechts im Hauptbereich -->
+        <div style="position:absolute;top:16px;right:20px;z-index:50;">
+          <${PhaseBadge} phase=${phase} navigate=${navigate} />
+        </div>
         ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} refreshKey=${refreshKey} />`}
         ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} />`}
         ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
@@ -6347,10 +6382,99 @@ function App() {
         ${activeSection === 'export' && html`<${ExportView} />`}
         ${activeSection === 'phase' && html`<${PhaseView} phase=${phase} setPhase=${handlePhaseChange} />`}
         ${activeSection === 'einstellungen' && html`<${EinstellungenView} />`}
+        ${activeSection === 'feedback' && html`<${FeedbackView} />`}
       </main>
+
+      <!-- Task #4: Globaler Feedback-Button -->
+      <${FeedbackButton} activeSection=${activeSection} />
 
       ${modal}
     </div>
+  `;
+}
+
+// Task #4 + #5: Feedback-System
+function FeedbackButton({ activeSection }) {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [open, setOpen] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    if (!rating) { showToast('Bitte erst eine Bewertung geben (Sterne).', 'error'); return; }
+    setSending(true);
+    try {
+      const payload = {
+        view: activeSection,
+        rating,
+        text: text.trim() || null,
+        user_agent: navigator.userAgent.slice(0, 200),
+      };
+      if (service.mode === 'produktiv') {
+        const userId = await service.getCurrentDbUserId().catch(() => null);
+        if (userId) payload.user_id = userId;
+        const { error } = await service.client.from('feedback').insert(payload);
+        if (error) throw new Error(error.message);
+      } else {
+        console.log('[KRS-Feedback Demo]', payload);
+      }
+      showToast('Danke für dein Feedback! 🙏', 'success');
+      setOpen(false); setRating(0); setText('');
+    } catch (e) {
+      showToast('Feedback konnte nicht gespeichert werden: ' + e.message, 'error');
+    } finally { setSending(false); }
+  };
+
+  return html`
+    <div style="position:fixed;bottom:24px;right:24px;z-index:300;">
+      ${open && html`
+        <div class="modal-overlay" onClick=${() => setOpen(false)}>
+          <div class="modal-content" onClick=${e => e.stopPropagation()} style="max-width:380px;">
+            <button class="modal-close" onClick=${() => setOpen(false)}>×</button>
+            <h2>💬 Feedback geben</h2>
+            <p style="font-size:13px;color:var(--text-muted);">Bereich: <strong>${activeSection}</strong></p>
+            <div style="display:flex;gap:6px;margin:12px 0;font-size:26px;">
+              ${[1,2,3,4,5].map(n => html`
+                <span style=${"cursor:pointer;opacity:" + (n <= rating ? '1' : '0.35')} onClick=${() => setRating(n)}>⭐</span>
+              `)}
+            </div>
+            <textarea
+              placeholder="Optionaler Kommentar…"
+              value=${text}
+              onInput=${e => setText(e.target.value)}
+              style="width:100%;min-height:80px;padding:8px;border:1px solid var(--border);border-radius:6px;font-family:inherit;font-size:14px;resize:vertical;"
+            ></textarea>
+            <button class="btn btn-primary" style="margin-top:12px;width:100%;" onClick=${send} disabled=${sending}>
+              ${sending ? '⏳ Wird gesendet…' : '✅ Absenden'}
+            </button>
+          </div>
+        </div>
+      `}
+      <button
+        onClick=${() => setOpen(!open)}
+        title="Feedback geben"
+        style="width:48px;height:48px;border-radius:50%;background:var(--krs-blau);color:#fff;border:none;font-size:20px;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,0.25);display:flex;align-items:center;justify-content:center;"
+      >💬</button>
+    </div>
+  `;
+}
+
+// === PHASE BADGE (Task #8) ===
+function PhaseBadge({ phase, navigate }) {
+  const cfg = {
+    setup:          { label: 'Setup',          color: '#8B97A2', bg: '#F0F2F4' },
+    anmeldung:      { label: 'Anmeldung',      color: '#4A6A83', bg: '#E3EEF7' },
+    verteilung:     { label: 'Verteilung',     color: '#D06B1A', bg: '#FEF0E0' },
+    nachbearbeitung:{ label: 'Nachbearbeitung',color: '#9B6A00', bg: '#FFF8DC' },
+    projekttage:    { label: 'Projekttage',    color: '#3A7A3A', bg: '#E6F5E6' },
+  }[phase] || { label: phase, color: '#666', bg: '#eee' };
+  return html`
+    <span
+      onClick=${() => navigate && navigate('phase')}
+      title="Zu Phase wechseln"
+      style=${"display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;background:" + cfg.bg + ";color:" + cfg.color + ";border:1px solid " + cfg.color + "33;"}
+    >📅 ${cfg.label}</span>
   `;
 }
 
@@ -6465,6 +6589,7 @@ function SchuelerView({ refreshKey }) {
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreview, setCsvPreview] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [showCsvInfo, setShowCsvInfo] = useState(false); // Task #7
 
   // Liste aller vorkommenden Klassen, alphabetisch sortiert (z.B. 5a, 5b, 6a …).
   // Wird als Klassenfilter-Dropdown angezeigt.
@@ -6615,9 +6740,12 @@ function SchuelerView({ refreshKey }) {
     const briefe = list.map(s => `
       <section class="brief">
         <header class="brief-header">
-          <div class="absender">
-            <strong>Kurpfalz-Realschule Schriesheim</strong><br/>
-            Projektwoche 2026
+          <div style="display:flex;align-items:center;gap:10pt;">
+            <img src="${LOGO_SRC}" alt="KRS" style="width:44pt;height:auto;display:block;" />
+            <div class="absender">
+              <strong>Kurpfalz-Realschule Schriesheim</strong><br/>
+              Projektwoche 2026
+            </div>
           </div>
           <div class="datum">Schriesheim, ${heute}</div>
         </header>
@@ -6717,6 +6845,35 @@ function SchuelerView({ refreshKey }) {
       <div class="btn-group">
         <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
         <button class="btn btn-secondary" onClick=${() => document.getElementById('csv-input').click()}>📥 CSV importieren</button>
+        <!-- Task #7: Info-Button CSV-Format -->
+        <button class="btn btn-ghost btn-small" title="CSV-Format anzeigen" onClick=${() => setShowCsvInfo(true)}>ℹ️</button>
+        ${showCsvInfo && html`
+          <div class="modal-overlay" onClick=${() => setShowCsvInfo(false)}>
+            <div class="modal-content" onClick=${e => e.stopPropagation()} style="max-width:540px;">
+              <button class="modal-close" onClick=${() => setShowCsvInfo(false)} aria-label="Schließen">×</button>
+              <h2>ℹ️ CSV-Format für Schüler</h2>
+              <p style="color:var(--text-muted);font-size:13px;">Spalten (Semikolon-getrennt, UTF-8). Erste Zeile = Kopfzeile.</p>
+              <pre style="background:var(--bg-subtle);padding:12px;border-radius:6px;font-size:12px;overflow-x:auto;white-space:pre;">code;vorname;nachname;klasse;klassenstufe
+S001;Max;Mustermann;5a;5
+S002;Erika;Musterfrau;7b;7</pre>
+              <table style="font-size:13px;border-collapse:collapse;width:100%;margin-top:12px;">
+                <thead><tr>
+                  <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Spalte</th>
+                  <th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Beschreibung</th>
+                </tr></thead>
+                <tbody>
+                  ${[['code','Eindeutiger Schüler-Code (z.B. S001)'],['vorname','Vorname des Schülers'],['nachname','Nachname des Schülers'],['klasse','Klassenbezeichnung (z.B. 5a, 7b)'],['klassenstufe','Numerische Jahrgangsstufe (5–9)']].map(([col,desc]) => html`
+                    <tr>
+                      <td style="padding:4px 8px;font-family:monospace;border-bottom:1px solid var(--border);">${col}</td>
+                      <td style="padding:4px 8px;border-bottom:1px solid var(--border);">${desc}</td>
+                    </tr>
+                  `)}
+                </tbody>
+              </table>
+              <a href="schueler-template.csv" download style="display:inline-block;margin-top:16px;" class="btn btn-secondary btn-small">⬇️ Vorlage herunterladen</a>
+            </div>
+          </div>
+        `}
         <button class="btn btn-primary" onClick=${() => printSerienbriefe('visible')} title="Druckt die aktuell gefilterte Liste (oder alle, wenn kein Filter aktiv)">
           🖨️ Serienbriefe drucken${(search || filter !== 'alle' || filterKlasse !== 'alle') ? ` (${gefiltert.length})` : ''}
         </button>
@@ -7359,6 +7516,7 @@ function VerteilungView({ setModal, reload }) {
   const [seed, setSeed] = useState('');
   const [committed, setCommitted] = useState(false);
   const [error, setError] = useState(null);
+  const [simDauer, setSimDauer] = useState(null); // Task #6: Dauer-Tracking
 
   // ---------- Demo-Helfer (nur Demo-Modus) ----------
   const testProjekte = mockProjekteData.map(p => ({
@@ -7432,12 +7590,15 @@ function VerteilungView({ setModal, reload }) {
   // ---------- Demo: Simulation (client-seitig) ----------
   const runSimulationDemo = () => {
     setRunning(true);
+    setSimDauer(null);
+    const t0 = Date.now();
     setTimeout(() => {
       const algo = new window.VerteilungsAlgorithmus();
       const newSeed = seed || `sim-${Date.now()}`;
       const result = algo.verteile({ schueler: generateTestSchueler(), projekte: testProjekte, seed: newSeed });
       setSimulation(result);
       setSeed(result.seed || newSeed);
+      setSimDauer(Date.now() - t0);
       setRunning(false);
     }, 600);
   };
@@ -7446,7 +7607,17 @@ function VerteilungView({ setModal, reload }) {
   const runSimulationLive = async () => {
     setRunning(true);
     setError(null);
+    setSimDauer(null);
+    const t0 = Date.now();
     try {
+      // Task #6: Empty-State-Prüfung
+      const schuelerCount = (mockSchueler || []).filter(s => s.hat_gewaehlt).length;
+      if (schuelerCount === 0) {
+        setError('Keine Schüler mit Wahlen in der Datenbank — Verteilung kann nicht simuliert werden. Erst CSV-Import und Anmeldephase abschließen.');
+        setSimulation(null);
+        setRunning(false);
+        return;
+      }
       const r = await service.runVerteilung({ seed: seed || null, commit: false });
       if (!r || r.success === false) {
         setError(r?.error || 'Simulation fehlgeschlagen');
@@ -7455,6 +7626,7 @@ function VerteilungView({ setModal, reload }) {
       }
       setSimulation(r);
       setSeed(r.seed || seed);
+      setSimDauer(r.dauer_ms != null ? r.dauer_ms : Date.now() - t0);
     } catch (err) {
       setError(err.message || String(err));
       setSimulation(null);
@@ -7635,13 +7807,25 @@ function VerteilungView({ setModal, reload }) {
           <input type="text" value=${seed} onInput=${e => setSeed(e.target.value)} placeholder="z.B. projekttage-2026-v1" />
         </div>
 
-        <button class="btn btn-primary" onClick=${runSimulation} disabled=${running}>
-          ${running ? '⏳ Läuft...' : '▶️ Simulation starten'}
+        <!-- Task #6: Simulation deaktivieren wenn Pre-Flight Fehler hat -->
+        <button class="btn btn-primary" onClick=${runSimulation} disabled=${running || (preflight && preflight.fehler && preflight.fehler.length > 0)}>
+          ${running ? html`<span>⏳ Algorithmus rechnet…</span>` : '▶️ Simulation starten'}
         </button>
+        ${preflight && preflight.fehler && preflight.fehler.length > 0 && html`
+          <div class="alert alert-warning" style="margin-top:8px;font-size:13px;">Erst alle Pre-Flight-Fehler beheben, dann kann die Simulation starten.</div>
+        `}
+        <!-- Task #6: Loading-Overlay während Simulation läuft -->
+        ${running && html`
+          <div style="position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;">
+            <div style="width:48px;height:48px;border:5px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.8s linear infinite;margin-bottom:16px;"></div>
+            <div style="font-size:16px;font-weight:600;">Algorithmus rechnet…</div>
+            <div style="font-size:13px;opacity:0.8;margin-top:6px;">Bitte warten, nichts klicken</div>
+          </div>
+        `}
 
         ${simulation && html`
           <div class="alert alert-info" style="margin-top:16px;">
-            <strong>Simulation fertig</strong> · Seed: <code>${simulation.seed}</code> · Dauer: <1 Sekunde
+            <strong>Simulation fertig</strong> · Seed: <code>${simulation.seed}</code> · Dauer: ${simDauer != null ? (simDauer < 1000 ? '<1 Sek' : (simDauer / 1000).toFixed(1) + ' Sek') : '<1 Sek'}
           </div>
 
           <h3>Ergebnis der Simulation</h3>
@@ -8386,7 +8570,74 @@ function TauschwuenscheView({ setModal, refreshKey }) {
 }
 
 // === EXPORT ===
+// Task #3: CSV-Export mit echter Logik
 function ExportView() {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const isDemo = service.mode !== 'produktiv';
+
+  // UTF-8 BOM + CSV-Download
+  const downloadCSV = (filename, rows, headers) => {
+    const escape = v => {
+      const s = String(v == null ? '' : v);
+      return (s.includes(';') || s.includes('"') || s.includes('\n')) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const lines = [headers.map(h => h.label).join(';')];
+    rows.forEach(r => lines.push(headers.map(h => escape(r[h.key])).join(';')));
+    const bom = '\uFEFF';
+    const blob = new Blob([bom + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
+
+  const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  const handleExportGesamt = async () => {
+    try {
+      const data = isDemo
+        ? (window.MOCK_ZUTEILUNGEN || mockZuteilungenData || [])
+        : await service.listZuteilungen();
+      if (!data || data.length === 0) { showToast('Noch keine Zuteilungsdaten zum Export.', 'error'); return; }
+      const headers = [
+        { key: 'schueler_code', label: 'Schüler-Code' },
+        { key: 'vorname',       label: 'Vorname' },
+        { key: 'nachname',      label: 'Nachname' },
+        { key: 'klasse',        label: 'Klasse' },
+        { key: 'projekt_titel', label: 'Projekt' },
+        { key: 'wahl_nr',       label: 'Wahl-Nr' },
+        { key: 'kommentar',     label: 'Kommentar' },
+      ];
+      downloadCSV('krs-zuteilungen-' + todayStr() + '.csv', data, headers);
+      showToast('✓ Gesamtliste heruntergeladen (' + data.length + ' Einträge)', 'success');
+    } catch (e) {
+      showToast('Export fehlgeschlagen: ' + e.message, 'error');
+    }
+  };
+
+  const handleExportProjektliste = async () => {
+    try {
+      const data = isDemo
+        ? (mockProjekteData || [])
+        : await service.listProjekte();
+      if (!data || data.length === 0) { showToast('Noch keine Projekte zum Export.', 'error'); return; }
+      const headers = [
+        { key: 'id',               label: 'ID' },
+        { key: 'titel',            label: 'Titel' },
+        { key: 'kurzbeschreibung', label: 'Kurzbeschreibung' },
+        { key: 'lehrer_name',      label: 'Lehrer' },
+        { key: 'min_klasse',       label: 'Min-Klasse' },
+        { key: 'max_klasse',       label: 'Max-Klasse' },
+        { key: 'min_teilnehmer',   label: 'Min-Teilnehmer' },
+        { key: 'max_plaetze',      label: 'Max-Plätze' },
+        { key: 'status',           label: 'Status' },
+      ];
+      downloadCSV('krs-projektliste-' + todayStr() + '.csv', data, headers);
+      showToast('✓ Projektliste heruntergeladen (' + data.length + ' Projekte)', 'success');
+    } catch (e) {
+      showToast('Export fehlgeschlagen: ' + e.message, 'error');
+    }
+  };
+
   return html`
     <div class="main-header">
       <h1 class="main-title">📥 Export & Aushang</h1>
@@ -8395,28 +8646,104 @@ function ExportView() {
       <div class="dash-tile">
         <div class="dash-tile-label">CSV</div>
         <div class="dash-tile-value" style="font-size:18px;">Gesamtliste</div>
-        <div class="dash-tile-sub">Alle 455 Zuteilungen</div>
-        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Herunterladen</button>
+        <div class="dash-tile-sub">Alle Zuteilungen (Schüler + Projekt)</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;" onClick=${handleExportGesamt}>
+          ⬇️ Herunterladen
+        </button>
+      </div>
+      <div class="dash-tile">
+        <div class="dash-tile-label">CSV</div>
+        <div class="dash-tile-value" style="font-size:18px;">Projektliste</div>
+        <div class="dash-tile-sub">Alle Projekte mit Details</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;" onClick=${handleExportProjektliste}>
+          ⬇️ Herunterladen
+        </button>
       </div>
       <div class="dash-tile">
         <div class="dash-tile-label">PDF</div>
         <div class="dash-tile-value" style="font-size:18px;">Klassenlisten</div>
-        <div class="dash-tile-sub">24 PDFs, eines pro Klasse</div>
-        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
-      </div>
-      <div class="dash-tile">
-        <div class="dash-tile-label">PDF</div>
-        <div class="dash-tile-value" style="font-size:18px;">Aushang pro Klasse</div>
-        <div class="dash-tile-sub">Nur Codes, DSGVO-konform</div>
-        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
+        <div class="dash-tile-sub">Kommt in Sprint C (Opus)</div>
+        <button class="btn btn-secondary btn-small btn-full" style="margin-top:12px;" disabled>Demnächst</button>
       </div>
       <div class="dash-tile">
         <div class="dash-tile-label">PDF</div>
         <div class="dash-tile-value" style="font-size:18px;">Teilnehmerlisten</div>
-        <div class="dash-tile-sub">Pro Projekt, für Lehrer</div>
-        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;">Generieren</button>
+        <div class="dash-tile-sub">Kommt in Sprint C (Opus)</div>
+        <button class="btn btn-secondary btn-small btn-full" style="margin-top:12px;" disabled>Demnächst</button>
       </div>
     </div>
+  `;
+}
+
+// === FEEDBACK VIEW (Task #5) ===
+function FeedbackView() {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const isDemo = service.mode !== 'produktiv';
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('offen'); // 'offen' | 'alle'
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (isDemo) {
+        setItems([]); // Demo hat keine DB
+      } else {
+        const { data, error } = await service.client
+          .from('feedback')
+          .select('*')
+          .order('erstellt_am', { ascending: false });
+        if (error) throw new Error(error.message);
+        setItems(data || []);
+      }
+    } catch (e) {
+      showToast('Feedback laden fehlgeschlagen: ' + e.message, 'error');
+    } finally { setLoading(false); }
+  }, [service, isDemo]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const markDone = async (id) => {
+    try {
+      if (!isDemo) {
+        const { error } = await service.client.from('feedback').update({ erledigt: true }).eq('id', id);
+        if (error) throw new Error(error.message);
+      }
+      setItems(prev => prev.map(x => x.id === id ? { ...x, erledigt: true } : x));
+    } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
+  };
+
+  const shown = filter === 'offen' ? items.filter(x => !x.erledigt) : items;
+  const stars = (n) => '⭐'.repeat(n || 0) + '☆'.repeat(Math.max(0, 5 - (n || 0)));
+
+  return html`
+    <div class="main-header">
+      <h1 class="main-title">💬 Feedback-Übersicht</h1>
+      <div class="btn-group">
+        <button class=${"btn btn-small " + (filter === 'offen' ? 'btn-primary' : 'btn-ghost')} onClick=${() => setFilter('offen')}>Offen (${items.filter(x => !x.erledigt).length})</button>
+        <button class=${"btn btn-small " + (filter === 'alle' ? 'btn-primary' : 'btn-ghost')} onClick=${() => setFilter('alle')}>Alle (${items.length})</button>
+        <button class="btn btn-ghost btn-small" onClick=${load}>🔄 Aktualisieren</button>
+      </div>
+    </div>
+    ${loading && html`<div class="alert alert-info">⏳ Wird geladen…</div>`}
+    ${!loading && isDemo && html`<div class="alert alert-warning">Im Demo-Modus gibt es keine echten Feedback-Einträge.</div>`}
+    ${!loading && !isDemo && shown.length === 0 && html`<div class="alert alert-info">Keine ${filter === 'offen' ? 'offenen' : ''} Feedback-Einträge vorhanden.</div>`}
+    ${shown.map(f => html`
+      <div class="card" style=${"border-left:4px solid " + (f.erledigt ? 'var(--success)' : 'var(--krs-blau)') + ";margin-bottom:12px;"}>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div style="flex:1;">
+            <div style="font-size:13px;color:var(--text-muted);margin-bottom:4px;">
+              ${new Date(f.erstellt_am).toLocaleString('de-DE')} · Bereich: <strong>${f.view || '–'}</strong>
+            </div>
+            <div style="font-size:18px;margin-bottom:6px;">${stars(f.rating)}</div>
+            ${f.text && html`<p style="margin:0;font-size:14px;">${f.text}</p>`}
+          </div>
+          ${!f.erledigt && html`
+            <button class="btn btn-success btn-small" onClick=${() => markDone(f.id)}>✓ Erledigt</button>
+          `}
+        </div>
+      </div>
+    `)}
   `;
 }
 
@@ -8486,6 +8813,12 @@ function EinstellungenView() {
 }
 
 render(html`<${App} />`, document.getElementById('app'));
+
+// Task #9: Login-Gate-Logo mit dem Base64-LOGO befüllen (LOGO_SRC erst hier definiert)
+(function() {
+  const img = document.getElementById('login-logo');
+  if (img) img.src = LOGO_SRC;
+})();
 </script>
 </body>
 </html>
