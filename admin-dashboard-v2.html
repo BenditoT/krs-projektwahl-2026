@@ -362,10 +362,19 @@ window.KRS_SUPABASE = {
         .from('system_settings').select('value').eq('key', 'phase').maybeSingle();
       if (error) throw new Error('getPhase: ' + error.message);
       if (!data) return 'anmeldung';
-      const v = data.value;
-      if (typeof v === 'string') return v;
+      // system_settings.value ist JSONB. Bestehende Deployments haben den Wert via
+      // JSON.stringify() doppelt encoded gespeichert → PostgREST liefert uns "\"anmeldung\""
+      // (String mit inneren Quotes). Wir parsen notfalls einmal, damit Dashboard['anmeldung']
+      // existiert statt Dashboard['"anmeldung"'] === undefined (→ Crash auf cfg.title).
+      let v = data.value;
+      if (typeof v === 'string') {
+        if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+          try { v = JSON.parse(v); } catch { v = v.slice(1, -1); }
+        }
+        return v;
+      }
       if (v && typeof v === 'object' && v.state) return v.state;
-      return String(v || 'anmeldung').replace(/^"|"$/g, '');
+      return String(v || 'anmeldung');
     }
     async getSystemSetting(key) {
       if (this.isDemo) return null;
@@ -376,9 +385,11 @@ window.KRS_SUPABASE = {
     }
     async setPhase(newPhase) {
       if (this.isDemo) { window.MOCK_PHASE = newPhase; return { success: true }; }
+      // JSONB-Column → der Supabase-Client serialisiert JS-Werte selbst.
+      // Früher stand hier JSON.stringify(newPhase), das hat zu doppel-encoding geführt.
       const { error } = await this.client
         .from('system_settings')
-        .upsert({ key: 'phase', value: JSON.stringify(newPhase) }, { onConflict: 'key' });
+        .upsert({ key: 'phase', value: newPhase }, { onConflict: 'key' });
       if (error) throw new Error('setPhase: ' + error.message);
       return { success: true };
     }
@@ -694,7 +705,8 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE);
+  window.KRS_VERSION = 'v18';
+  console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
 </head>
@@ -1201,7 +1213,7 @@ import { useState, useEffect, useMemo, useCallback } from 'https://esm.sh/preact
 import htm from 'https://esm.sh/htm@3.1.1';
 const html = htm.bind(h);
 
-const LOGO_SRC = "data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAJ0A2gDASIAAhEBAxEB/8QAHAABAAICAwEAAAAAAAAAAAAAAAYHBQgBAwQC/8QAVhAAAQMCAgUECg0ICQQBBQAAAAECAwQFBhEHEiExURNBYXEUIjI2c4GRssHRCBUjMzRSVFZydJOhsRYXGEJigpKUJDU3Q1NVs8LhJXWi8ERjg6PS8f/EABsBAQABBQEAAAAAAAAAAAAAAAACAQMEBgcF/8QAOxEBAAEDAQQEDQMEAgMBAAAAAAECAxEEBRIhMQYyQVETIjRTYXFykaGxwdHhFBaBFTM78CNCQ1LxYv/aAAwDAQACEQMRAD8A3LAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADhyo1qucqIiJmqrzAcggGLdLeEbDOtJDUSXatzySChRH7eCu3fipHmaaqymkjnveArtbbY96NWrc9ztXPcuqsbU+/wApci1XPHCE3KY7VwA6qOpgrKSGrppGywTMSSN7V2OaqZoqeI7S2mAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const LOGO_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAJ0A2gDASIAAhEBAxEB/8QAHAABAAICAwEAAAAAAAAAAAAAAAYHBQgBAwQC/8QAVhAAAQMCAgUECg0ICQQBBQAAAAECAwQFBhEHEiExURNBYXEUIjI2c4GRssHRCBUjMzRSVFZydJOhsRYXGEJigpKUJDU3Q1NVs8LhJXWi8ERjg6PS8f/EABsBAQABBQEAAAAAAAAAAAAAAAACAQMEBgcF/8QAOxEBAAEDAQQEDQMEAgMBAAAAAAECAxEEBRIhMQYyQVETIjRTYXFykaGxwdHhFBaBFTM78CNCQ1LxYv/aAAwDAQACEQMRAD8A3LAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADhyo1qucqIiJmqrzAcggGLdLeEbDOtJDUSXatzySChRH7eCu3fipHmaaqymkjnveArtbbY96NWrc9ztXPcuqsbU+/wApci1XPHCE3KY7VwA6qOpgrKSGrppGywTMSSN7V2OaqZoqeI7S2mAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 const MOCK_LEHRER = [
   {
@@ -6247,18 +6259,27 @@ function App() {
     projekttage: 'Projekttage'
   };
 
+  // Dynamische Zähler aus den gemounteten Arrays (werden durch loadAll()/Realtime aktualisiert).
+  // refreshKey im Dep-Array von App sorgt dafür, dass nach jedem Supabase-Refresh neu gerendert wird.
+  const schuelerCount = (mockSchueler || []).length;
+  const projekteCount = (mockProjekteData || []).length;
+  const lehrerCount   = (mockLehrerData || []).length;
+  const angemeldetCount = (mockSchueler || []).filter(s => s && s.hat_gewaehlt).length;
+  const tauschOffenCount = (mockTauschData || []).filter(t => t && (t.status === 'offen' || !t.status)).length;
+  const fmtCount = (n) => (n > 0 ? String(n) : null);
+
   const navItems = [
     { section: 'dashboard', label: '🏠 Dashboard', always: true },
     { type: 'divider', label: 'Stammdaten' },
-    { section: 'schueler', label: '👨‍🎓 Schüler', always: true, badge: '455' },
-    { section: 'projekte', label: '📚 Projekte', always: true, badge: '18', recommended: phase === 'setup' },
-    { section: 'lehrer', label: '👨‍🏫 Lehrer', always: true, badge: '20' },
+    { section: 'schueler', label: '👨‍🎓 Schüler', always: true, badge: fmtCount(schuelerCount) },
+    { section: 'projekte', label: '📚 Projekte', always: true, badge: fmtCount(projekteCount), recommended: phase === 'setup' },
+    { section: 'lehrer', label: '👨‍🏫 Lehrer', always: true, badge: fmtCount(lehrerCount) },
     { type: 'divider', label: 'Ablauf' },
-    { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: '423/455', recommended: phase === 'anmeldung' },
+    { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: schuelerCount > 0 ? `${angemeldetCount}/${schuelerCount}` : null, recommended: phase === 'anmeldung' },
     { section: 'verteilung', label: '🎲 Verteilung', phases: ['verteilung', 'nachbearbeitung', 'projekttage'], recommended: phase === 'verteilung' },
     { section: 'zuteilungen', label: '🎯 Zuteilungen', phases: ['nachbearbeitung', 'projekttage'] },
     { section: 'umbuchung', label: '🔀 Manuelle Umbuchung', phases: ['nachbearbeitung', 'projekttage'] },
-    { section: 'tauschwuensche', label: '🔄 Tauschwünsche', phases: ['nachbearbeitung'], badge: '3', badgeType: 'orange', recommended: phase === 'nachbearbeitung' },
+    { section: 'tauschwuensche', label: '🔄 Tauschwünsche', phases: ['nachbearbeitung'], badge: fmtCount(tauschOffenCount), badgeType: 'orange', recommended: phase === 'nachbearbeitung' },
     { section: 'export', label: '📥 Export & Aushang', phases: ['nachbearbeitung', 'projekttage'] },
     { type: 'divider', label: 'System' },
     { section: 'phase', label: '⚙️ Phase wechseln', always: true },
@@ -6310,7 +6331,7 @@ function App() {
       </aside>
 
       <main class="main">
-        ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} />`}
+        ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} refreshKey=${refreshKey} />`}
         ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} />`}
         ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} />`}
         ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} />`}
@@ -6330,21 +6351,30 @@ function App() {
 }
 
 // === DASHBOARD ===
-function Dashboard({ phase, navigate }) {
+function Dashboard({ phase, navigate, refreshKey }) {
+  // Live-Counts aus den gemounteten Arrays (mutiert via replaceArray nach loadAll).
+  // refreshKey ist nur im Dep-Array, damit Preact beim Supabase-Refresh sicher neu rendert.
+  const schuelerCount = (mockSchueler || []).length;
+  const projekteCount = (mockProjekteData || []).length;
+  const lehrerCount   = (mockLehrerData || []).length;
+  const angemeldetCount = (mockSchueler || []).filter(s => s && s.hat_gewaehlt).length;
+  const tauschOffenCount = (mockTauschData || []).filter(t => t && (t.status === 'offen' || !t.status)).length;
+  const prozentAngemeldet = schuelerCount ? Math.round((angemeldetCount / schuelerCount) * 100) : 0;
+
   const content = {
     setup: {
       title: 'Aktuelle Aufgabe: Setup',
       subtitle: 'Bevor die Anmeldung starten kann, müssen Projekte angelegt und Lehrer eingeladen werden.',
       tiles: [
-        { label: 'Projekte', value: 18, action: () => navigate('projekte'), recommended: true },
-        { label: 'Lehrer', value: 20, action: () => navigate('lehrer') },
+        { label: 'Projekte', value: projekteCount, action: () => navigate('projekte'), recommended: true },
+        { label: 'Lehrer',   value: lehrerCount,   action: () => navigate('lehrer') },
       ]
     },
     anmeldung: {
       title: 'Anmeldungs-Phase läuft',
       subtitle: 'Überwache die Anmeldungen und schließe die Phase, wenn genug Schüler sich angemeldet haben.',
       tiles: [
-        { label: 'Anmeldungen', value: '423/455', sub: '93%', action: () => navigate('anmeldungen'), recommended: true },
+        { label: 'Anmeldungen', value: `${angemeldetCount}/${schuelerCount}`, sub: `${prozentAngemeldet}%`, action: () => navigate('anmeldungen'), recommended: true },
       ]
     },
     verteilung: {
@@ -6358,8 +6388,8 @@ function Dashboard({ phase, navigate }) {
       title: 'Nachbearbeitung läuft',
       subtitle: 'Bearbeite Tauschwünsche und führe manuelle Umbuchungen durch.',
       tiles: [
-        { label: 'Tauschwünsche', value: 3, action: () => navigate('tauschwuensche'), recommended: true },
-        { label: 'Umbuchungen', value: 'Manuell', action: () => navigate('umbuchung') },
+        { label: 'Tauschwünsche', value: tauschOffenCount, action: () => navigate('tauschwuensche'), recommended: true },
+        { label: 'Umbuchungen',   value: 'Manuell',         action: () => navigate('umbuchung') },
       ]
     },
     projekttage: {
@@ -6371,7 +6401,13 @@ function Dashboard({ phase, navigate }) {
     }
   };
 
-  const cfg = content[phase];
+  // Robust gegen unerwartete Phase-Werte (z.B. aus DB mit alten/neuen Zuständen).
+  // Fällt auf 'anmeldung' zurück, damit Dashboard niemals crasht und User immer Stats sieht.
+  const cfg = content[phase] || content['anmeldung'] || {
+    title: 'Projektwoche 2026',
+    subtitle: 'Unbekannte Phase: ' + String(phase),
+    tiles: []
+  };
 
   return html`
     <div class="main-header">
@@ -6382,7 +6418,7 @@ function Dashboard({ phase, navigate }) {
     </div>
 
     <div class="dash-grid">
-      ${cfg.tiles.map(t => html`
+      ${(cfg.tiles || []).map(t => html`
         <div class=${"dash-tile " + (t.recommended ? "highlight" : "")} onClick=${t.action}>
           <div class="dash-tile-label">${t.label}</div>
           <div class="dash-tile-value">${t.value}</div>
@@ -6394,14 +6430,23 @@ function Dashboard({ phase, navigate }) {
     <div class="card">
       <h2>📊 Schnelle Statistik</h2>
       <div class="stat-row">
-        <div class="stat-label">Schüler</div>
-        <div class="stat-bar"><div class="stat-bar-fill w1" style="width:100%">455</div></div>
-        <div class="stat-value">100%</div>
+        <div class="stat-label">Angemeldet</div>
+        <div class="stat-bar">
+          <div class=${"stat-bar-fill " + (prozentAngemeldet >= 95 ? 'w1' : prozentAngemeldet >= 80 ? 'w2' : 'w3')} style=${"width:" + prozentAngemeldet + "%"}>
+            ${angemeldetCount}/${schuelerCount}
+          </div>
+        </div>
+        <div class="stat-value">${prozentAngemeldet}%</div>
       </div>
       <div class="stat-row">
         <div class="stat-label">Projekte</div>
-        <div class="stat-bar"><div class="stat-bar-fill w1" style="width:100%">18</div></div>
-        <div class="stat-value">18</div>
+        <div class="stat-bar"><div class=${"stat-bar-fill " + (projekteCount > 0 ? 'w1' : 'none')} style=${"width:" + (projekteCount > 0 ? 100 : 0) + "%"}>${projekteCount}</div></div>
+        <div class="stat-value">${projekteCount}</div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-label">Lehrer</div>
+        <div class="stat-bar"><div class=${"stat-bar-fill " + (lehrerCount > 0 ? 'w1' : 'none')} style=${"width:" + (lehrerCount > 0 ? 100 : 0) + "%"}>${lehrerCount}</div></div>
+        <div class="stat-value">${lehrerCount}</div>
       </div>
     </div>
   `;
@@ -6411,9 +6456,19 @@ function Dashboard({ phase, navigate }) {
 function SchuelerView({ refreshKey }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('alle');
+  const [filterKlasse, setFilterKlasse] = useState('alle');
+  const [selectedCodes, setSelectedCodes] = useState(() => new Set());
   const [csvFile, setCsvFile] = useState(null);
   const [csvPreview, setCsvPreview] = useState(null);
   const [importing, setImporting] = useState(false);
+
+  // Liste aller vorkommenden Klassen, alphabetisch sortiert (z.B. 5a, 5b, 6a …).
+  // Wird als Klassenfilter-Dropdown angezeigt.
+  const klassenListe = useMemo(() => {
+    const set = new Set();
+    mockSchueler.forEach(s => { if (s.klasse) set.add(String(s.klasse).toLowerCase()); });
+    return Array.from(set).sort();
+  }, [refreshKey, mockSchueler.length]);
 
   const gefiltert = mockSchueler.filter(s => {
     const q = search.toLowerCase();
@@ -6421,8 +6476,31 @@ function SchuelerView({ refreshKey }) {
     const matchFilter = filter === 'alle'
       || (filter === 'angemeldet' && s.hat_gewaehlt)
       || (filter === 'fehlt' && !s.hat_gewaehlt);
-    return matchSearch && matchFilter;
+    const matchKlasse = filterKlasse === 'alle' || (s.klasse && String(s.klasse).toLowerCase() === filterKlasse);
+    return matchSearch && matchFilter && matchKlasse;
   });
+
+  // Helfer für Checkbox-Logik
+  const toggleSelect = (code) => {
+    setSelectedCodes(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code); else next.add(code);
+      return next;
+    });
+  };
+  const toggleSelectAllVisible = () => {
+    setSelectedCodes(prev => {
+      const visibleCodes = gefiltert.map(s => s.code);
+      const allSelected = visibleCodes.length > 0 && visibleCodes.every(c => prev.has(c));
+      const next = new Set(prev);
+      if (allSelected) visibleCodes.forEach(c => next.delete(c));
+      else visibleCodes.forEach(c => next.add(c));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedCodes(new Set());
+  const allVisibleSelected = gefiltert.length > 0 && gefiltert.every(s => selectedCodes.has(s.code));
+  const someVisibleSelected = gefiltert.some(s => selectedCodes.has(s.code)) && !allVisibleSelected;
 
   const handleCSVUpload = (e) => {
     const file = e.target.files?.[0];
@@ -6501,12 +6579,26 @@ function SchuelerView({ refreshKey }) {
   // =====================================================================
   // Serienbriefe drucken — erzeugt pro Schüler eine Brief-Seite mit
   // persönlichem Anmeldecode und öffnet direkt den Druck-Dialog.
-  // Druckt aktuell gefilterte Liste; fällt bei leerer Liste auf alle zurück.
+  //
+  // scope:
+  //   'selection'  → nur aktuelle Checkbox-Auswahl (auch wenn gefiltert)
+  //   'visible'    → aktuell sichtbar gefilterte Liste (Default)
+  //   'all'        → immer alle Schüler, Filter ignorieren
+  //
+  // Wichtig für den Anwendungsfall „Code verloren": der User filtert nach
+  // Klasse oder sucht den Schüler, hakt ihn an, und druckt nur die Auswahl.
   // =====================================================================
-  const printSerienbriefe = () => {
-    // Wenn der User eine Suche/Filter aktiv hat, drucken wir genau die sichtbare Auswahl.
-    // Ohne aktive Einschränkung wird für alle Schüler gedruckt.
-    const list = (gefiltert && gefiltert.length > 0) ? gefiltert : mockSchueler;
+  const printSerienbriefe = (scope = 'visible', overrideList = null) => {
+    let list;
+    if (Array.isArray(overrideList)) {
+      list = overrideList;
+    } else if (scope === 'selection') {
+      list = mockSchueler.filter(s => selectedCodes.has(s.code));
+    } else if (scope === 'all') {
+      list = mockSchueler;
+    } else {
+      list = (gefiltert && gefiltert.length > 0) ? gefiltert : mockSchueler;
+    }
     if (!list || list.length === 0) {
       showToast('Keine Schüler zum Drucken vorhanden.', 'error');
       return;
@@ -6621,7 +6713,9 @@ function SchuelerView({ refreshKey }) {
       <div class="btn-group">
         <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
         <button class="btn btn-secondary" onClick=${() => document.getElementById('csv-input').click()}>📥 CSV importieren</button>
-        <button class="btn btn-primary" onClick=${printSerienbriefe}>🖨️ Serienbriefe drucken</button>
+        <button class="btn btn-primary" onClick=${() => printSerienbriefe('visible')} title="Druckt die aktuell gefilterte Liste (oder alle, wenn kein Filter aktiv)">
+          🖨️ Serienbriefe drucken${(search || filter !== 'alle' || filterKlasse !== 'alle') ? ` (${gefiltert.length})` : ''}
+        </button>
       </div>
     </div>
 
@@ -6661,20 +6755,47 @@ function SchuelerView({ refreshKey }) {
           <input type="text" value=${search} onInput=${e => setSearch(e.target.value)} placeholder="Name oder Code..." />
         </div>
         <div class="input-group" style="margin:0;">
-          <label>Filter</label>
+          <label>Status</label>
           <select value=${filter} onChange=${e => setFilter(e.target.value)}>
             <option value="alle">Alle anzeigen</option>
             <option value="angemeldet">Nur angemeldete</option>
             <option value="fehlt">Noch nicht angemeldet</option>
           </select>
         </div>
+        <div class="input-group" style="margin:0;">
+          <label>Klasse</label>
+          <select value=${filterKlasse} onChange=${e => setFilterKlasse(e.target.value)}>
+            <option value="alle">Alle Klassen</option>
+            ${klassenListe.map(k => html`<option value=${k}>${k.toUpperCase()}</option>`)}
+          </select>
+        </div>
       </div>
+      ${selectedCodes.size > 0 && html`
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:10px 12px;background:var(--bg-subtle, #f1f5f9);border-radius:6px;">
+          <strong>${selectedCodes.size} Schüler ausgewählt</strong>
+          <button class="btn btn-primary btn-small" onClick=${() => printSerienbriefe('selection')}>
+            🖨️ Auswahl drucken (${selectedCodes.size})
+          </button>
+          <button class="btn btn-ghost btn-small" onClick=${clearSelection}>Auswahl aufheben</button>
+          <span style="margin-left:auto;font-size:12px;color:var(--text-muted);">Tipp: Bei verlorenem Code Schüler anhaken und „Auswahl drucken".</span>
+        </div>
+      `}
     </div>
 
     <div class="table-wrapper">
       <table>
         <thead>
           <tr>
+            <th style="width:32px;text-align:center;">
+              <input
+                type="checkbox"
+                aria-label="Alle sichtbaren auswählen"
+                checked=${allVisibleSelected}
+                ref=${el => { if (el) el.indeterminate = someVisibleSelected; }}
+                onChange=${toggleSelectAllVisible}
+                title=${allVisibleSelected ? 'Alle abwählen' : 'Alle sichtbaren auswählen'}
+              />
+            </th>
             <th>Code</th>
             <th>Name</th>
             <th>Klasse</th>
@@ -6685,22 +6806,30 @@ function SchuelerView({ refreshKey }) {
         </thead>
         <tbody>
           ${gefiltert.length === 0 ? html`
-            <tr><td colspan="6">
+            <tr><td colspan="7">
               <div class="empty-state">
                 <span class="empty-emoji">🔍</span>
                 <div class="empty-title">Keine Schüler gefunden</div>
-                <div class="empty-hint">${search || filter !== 'alle' ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
+                <div class="empty-hint">${search || filter !== 'alle' || filterKlasse !== 'alle' ? 'Passe Suche oder Filter an, oder importiere Schüler via CSV-Import.' : 'Noch keine Schüler angelegt. Nutze den CSV-Import in der Setup-Phase.'}</div>
               </div>
             </td></tr>
           ` : gefiltert.map(s => html`
             <tr>
+              <td style="text-align:center;">
+                <input
+                  type="checkbox"
+                  aria-label=${`${s.vorname} ${s.nachname} auswählen`}
+                  checked=${selectedCodes.has(s.code)}
+                  onChange=${() => toggleSelect(s.code)}
+                />
+              </td>
               <td style="font-family:monospace;">${s.code}</td>
               <td>${s.vorname} ${s.nachname}</td>
               <td>${s.klasse}</td>
               <td>${s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
               <td>${s.zuteilung || '—'}</td>
               <td class="actions-cell">
-                <button class="btn btn-ghost btn-small">Details</button>
+                <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('override', [s])} title=${`Nur Brief für ${s.vorname} ${s.nachname} drucken`}>🖨️ Brief</button>
               </td>
             </tr>
           `)}
