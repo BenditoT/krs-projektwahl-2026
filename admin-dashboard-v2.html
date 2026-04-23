@@ -705,7 +705,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v18';
+  window.KRS_VERSION = 'v20';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6844,6 +6844,12 @@ function ProjekteView({ setModal, refreshKey }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
 
+  const closeModal = () => {
+    setModal(null);
+    setFormData(null);
+    setEditingId(null);
+  };
+
   const openCreateModal = () => {
     setFormData({
       id: 'p' + (mockProjekteData.length + 1),
@@ -6857,20 +6863,23 @@ function ProjekteView({ setModal, refreshKey }) {
       status: 'entwurf'
     });
     setEditingId('new');
-    showModal();
   };
 
   const openEditModal = (projekt) => {
     setFormData({...projekt});
     setEditingId(projekt.id);
-    showModal();
   };
 
-  const showModal = () => {
+  // v19: Modal bei jedem formData-Wechsel neu in den globalen Modal-Slot schreiben,
+  // damit der Prefill zieht UND Live-Eingaben reflected werden (controlled inputs).
+  // Alter Bug: showModal() wurde synchron nach setFormData() gerufen und las im
+  // Closure das stale formData → Maske blieb leer.
+  useEffect(() => {
+    if (!formData || !editingId) { setModal(null); return; }
     setModal(html`
-      <div class="modal-overlay" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>
+      <div class="modal-overlay" onClick=${closeModal}>
         <div class="modal-content" onClick=${e => e.stopPropagation()}>
-          <button class="modal-close" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <button class="modal-close" onClick=${closeModal} aria-label="Schließen" title="Schließen (ESC)">×</button>
           <h2>${editingId === 'new' ? '➕ Neues Projekt' : '✏️ Projekt bearbeiten'}</h2>
           <div class="input-group">
             <label>Titel *</label>
@@ -6878,7 +6887,7 @@ function ProjekteView({ setModal, refreshKey }) {
           </div>
           <div class="input-group">
             <label>Kurzbeschreibung</label>
-            <textarea onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}>${formData?.kurzbeschreibung || ''}</textarea>
+            <textarea value=${formData?.kurzbeschreibung || ''} onInput=${e => setFormData({...formData, kurzbeschreibung: e.target.value})}></textarea>
           </div>
           <div class="form-row">
             <div class="input-group">
@@ -6997,7 +7006,7 @@ function ProjekteView({ setModal, refreshKey }) {
         </div>
       </div>
     `);
-  };
+  }, [formData, editingId]);
 
   return html`
     <div class="main-header">
@@ -7217,22 +7226,59 @@ function LehrerView({ setModal, refreshKey }) {
 }
 
 // === ANMELDUNGEN ===
+// v20: dynamisch aus DB berechnet (früher waren Zahlen wie "423 von 455 Schülern (93%)"
+//      und die Klassenliste hart kodiert — Mock aus der Prototyp-Phase).
 function AnmeldungenView() {
-  const klassenStatus = [
-    { klasse: '5a', schueler: 26, angemeldet: 26 },
-    { klasse: '5b', schueler: 25, angemeldet: 23 },
-    { klasse: '5c', schueler: 27, angemeldet: 24 },
-    { klasse: '6a', schueler: 28, angemeldet: 27 },
-    { klasse: '7b', schueler: 25, angemeldet: 25 },
-    { klasse: '8a', schueler: 24, angemeldet: 22 },
-    { klasse: '9c', schueler: 23, angemeldet: 20 },
-  ];
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [schueler, setSchueler] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await service.listSchueler();
+        if (!cancelled) setSchueler(Array.isArray(list) ? list : []);
+      } catch (e) {
+        if (!cancelled) setLoadError(e.message || String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [service]);
+
+  const { klassenStatus, gesamt, angemeldet, prozentGesamt } = useMemo(() => {
+    const groups = new Map();
+    let ges = 0, ang = 0;
+    for (const s of schueler) {
+      const k = s.klasse || '?';
+      if (!groups.has(k)) groups.set(k, { klasse: k, schueler: 0, angemeldet: 0 });
+      const g = groups.get(k);
+      g.schueler += 1;
+      ges += 1;
+      // hat_gewaehlt kann als Spalte oder Status-Objekt vorliegen
+      const gewaehlt = !!(s.hat_gewaehlt || (s.status && s.status.hat_gewaehlt));
+      if (gewaehlt) { g.angemeldet += 1; ang += 1; }
+    }
+    const list = Array.from(groups.values()).sort((a, b) => String(a.klasse).localeCompare(String(b.klasse), 'de'));
+    const pg = ges > 0 ? Math.round((ang / ges) * 100) : 0;
+    return { klassenStatus: list, gesamt: ges, angemeldet: ang, prozentGesamt: pg };
+  }, [schueler]);
+
+  if (loading) {
+    return html`<div class="card"><div class="loading">Lade Anmelde-Status aus der Datenbank …</div></div>`;
+  }
+  if (loadError) {
+    return html`<div class="alert alert-error"><strong>Fehler beim Laden:</strong> ${loadError}</div>`;
+  }
 
   return html`
     <div class="main-header">
       <div>
         <h1 class="main-title">Anmelde-Status</h1>
-        <div class="main-subtitle">423 von 455 Schülern (93%)</div>
+        <div class="main-subtitle">${angemeldet} von ${gesamt} Schülern (${prozentGesamt}%)</div>
       </div>
       <div class="btn-group">
         <button class="btn btn-secondary">📧 Erinnerung senden</button>
@@ -7242,14 +7288,18 @@ function AnmeldungenView() {
 
     <div class="card">
       <h2>📊 Anmelde-Status pro Klasse</h2>
-      ${klassenStatus.map(k => {
-        const prozent = Math.round((k.angemeldet / k.schueler) * 100);
+      ${klassenStatus.length === 0 ? html`
+        <div class="empty-state" style="padding:1rem; color:var(--muted);">
+          Noch keine Schüler in der Datenbank. Erst CSV-Import durchführen, dann erscheint hier der Anmelde-Status.
+        </div>
+      ` : klassenStatus.map(k => {
+        const prozent = k.schueler > 0 ? Math.round((k.angemeldet / k.schueler) * 100) : 0;
         const fehlt = k.schueler - k.angemeldet;
         return html`
           <div class="stat-row">
             <div class="stat-label">Klasse ${k.klasse}</div>
             <div class="stat-bar">
-              <div class=${"stat-bar-fill " + (prozent >= 95 ? 'w1' : prozent >= 80 ? 'w2' : 'w3')} style=${"width:" + prozent + "%"}>
+              <div class=${"stat-bar-fill " + (prozent >= 95 ? 'w1' : prozent >= 80 ? 'w2' : 'w3')} style=${"width:" + Math.max(prozent, 3) + "%"}>
                 ${k.angemeldet}/${k.schueler}
               </div>
             </div>
