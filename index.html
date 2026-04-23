@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <title>KRS Projektwahl 2026 – Prototyp</title>
+  <title>KRS Projektwahl 2026</title>
   <style>
     :root {
       --krs-blau: #4A6A83;
@@ -43,8 +43,8 @@
       font-size: 15px;
     }
     .banner {
-      background: #FEF3C7;
-      border-left: 4px solid var(--krs-gelb);
+      background: #DCFCE7;
+      border-left: 4px solid #16A34A;
       padding: 12px 16px;
       border-radius: 4px;
       font-size: 14px;
@@ -72,6 +72,7 @@
       padding: 2px 8px; border-radius: 3px; font-weight: 600;
     }
     .tag.orange { background: var(--krs-orange); }
+    .tag.green { background: #16A34A; }
     .tag.gelb { background: var(--krs-gelb); color: #333; }
     .card-desc { font-size: 14px; color: var(--grau-text); line-height: 1.5; }
     footer {
@@ -87,33 +88,32 @@
          style="display:block; margin: 24px auto 8px; max-width: 280px; width: 70%; height: auto;"
          onerror="this.style.display='none';">
     <h1>KRS Projektwahl 2026</h1>
-    <p class="subtitle">Prototyp-Hosting · Kurpfalz-Realschule Schriesheim · Projekttage 21.–23. Juli 2026</p>
+    <p class="subtitle">Kurpfalz-Realschule Schriesheim · Projekttage 21.–23. Juli 2026</p>
 
     <div class="banner">
-      <strong>Hinweis:</strong> Dies ist ein <strong>Klick-Prototyp mit Demo-Daten</strong>.
-      Die echte Produktionsumgebung wird nach Freigabe des Datenschutzbeauftragten aufgesetzt.
+      <strong>Live-Betrieb:</strong> Die Anwendung läuft produktiv mit echter Datenbank.
+      Schüler:innen melden sich mit ihrem persönlichen Anmelde-Code an, Lehrer:innen verwalten Projekte und Zuteilung über das Admin-Dashboard.
     </div>
 
-    <a class="card" href="schueler.html">
+    <a class="card" href="schueler-frontend-v3.html">
       <div class="card-title">
         <span>Schüler-App</span>
-        <span class="tag">Demo</span>
+        <span class="tag green">Live</span>
       </div>
       <div class="card-desc">
-        Anmelde-Code eingeben, drei Wunsch-Projekte wählen, Ergebnis abrufen,
-        Tauschwunsch stellen. Demo-Codes: <code>7B-A7K2</code>, <code>5A-B3X9</code>,
-        <code>9C-K7M2</code>, <code>8A-T4P1</code>.
+        Mit persönlichem Anmelde-Code einloggen, drei Wunsch-Projekte wählen, Ergebnis abrufen,
+        Tauschwunsch stellen.
       </div>
     </a>
 
-    <a class="card" href="admin.html">
+    <a class="card" href="admin-dashboard-v2.html">
       <div class="card-title">
         <span>Admin-Dashboard</span>
-        <span class="tag orange">Demo</span>
+        <span class="tag green">Live</span>
       </div>
       <div class="card-desc">
-        Sidebar mit Dashboard, Schüler-/Projekte-/Lehrer-Verwaltung, Verteilungs-Workflow,
-        Tauschwunsch-Inbox, Phasen-Steuerung.
+        Dashboard, Schüler-/Projekte-/Lehrer-Verwaltung, Verteilungs-Workflow,
+        Tauschwunsch-Inbox, Phasen-Steuerung. Zugang nur mit Lehrer-Login.
       </div>
     </a>
 
@@ -123,13 +123,12 @@
         <span class="tag gelb">Vorlage</span>
       </div>
       <div class="card-desc">
-        Serienbrief-Vorlage mit KRS-Branding, QR-Code und Anmelde-Code —
-        bereit für den Druck aus Python (siehe <code>generate_schuelerbrief.py</code>).
+        Serienbrief-Vorlage mit KRS-Branding, QR-Code und Anmelde-Code.
       </div>
     </a>
 
     <footer>
-      Stand: April 2026 · Konzeption und Klickprototypen fertig, produktive Umsetzung läuft.<br>
+      Stand: April 2026 · Kurpfalz-Realschule Schriesheim<br>
       Kontakt: <a href="mailto:kotzan@realschule-schriesheim.de">Norbert Kotzan</a>
     </footer>
   </div>
