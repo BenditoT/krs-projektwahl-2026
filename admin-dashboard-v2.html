@@ -701,11 +701,14 @@ window.KRS_SUPABASE = {
     subscribeZuteilungen(cb) { return this._sub('zuteilungen',    'rt-zut-'      + Math.random().toString(36).slice(2,8), cb); }
     subscribeTauschwuensche(cb){ return this._sub('tauschwuensche','rt-tausch-' + Math.random().toString(36).slice(2,8), cb); }
     subscribeVerteilungen(cb){ return this._sub('verteilungen',   'rt-vert-'    + Math.random().toString(36).slice(2,8), cb); }
+    // v22: Lehrer-Realtime — war bis v21 nicht abonniert, weshalb Lehrer-Edit
+    // zwar in Supabase ankam, aber die UI nicht aktualisierte (mockLehrerData stale).
+    subscribeUsers(cb)       { return this._sub('users',          'rt-users-'   + Math.random().toString(36).slice(2,8), cb); }
   }
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v21';
+  window.KRS_VERSION = 'v22';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6209,6 +6212,7 @@ function App() {
       if (service.subscribeZuteilungen) subs.push(service.subscribeZuteilungen(bump));
       if (service.subscribeTauschwuensche) subs.push(service.subscribeTauschwuensche(bump));
       if (service.subscribeVerteilungen) subs.push(service.subscribeVerteilungen(bump));
+      if (service.subscribeUsers)       subs.push(service.subscribeUsers(bump));
     } catch (err) {
       console.warn('[admin] subscribe failed:', err);
     }
@@ -6333,8 +6337,8 @@ function App() {
       <main class="main">
         ${activeSection === 'dashboard' && html`<${Dashboard} phase=${phase} navigate=${navigate} refreshKey=${refreshKey} />`}
         ${activeSection === 'schueler' && html`<${SchuelerView} refreshKey=${refreshKey} />`}
-        ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} />`}
-        ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} />`}
+        ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
+        ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'anmeldungen' && html`<${AnmeldungenView} />`}
         ${activeSection === 'verteilung' && html`<${VerteilungView} setModal=${setModal} refreshKey=${refreshKey} reload=${loadAll} />`}
         ${activeSection === 'zuteilungen' && html`<${ZuteilungenView} setModal=${setModal} refreshKey=${refreshKey} reload=${loadAll} />`}
@@ -6840,7 +6844,7 @@ function SchuelerView({ refreshKey }) {
 }
 
 // === PROJEKTE ===
-function ProjekteView({ setModal, refreshKey }) {
+function ProjekteView({ setModal, refreshKey, loadAll }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
 
@@ -6944,6 +6948,10 @@ function ProjekteView({ setModal, refreshKey }) {
                     const i = mockProjekteData.findIndex(p => p.id === editingId);
                     if (i !== -1) mockProjekteData.splice(i, 1);
                   }
+                  // v22: nach DB-Write in Produktiv-Modus zentralen loadAll() triggern,
+                  // damit mockProjekteData aktualisiert und die View neu gerendert wird.
+                  // Realtime-Subscription ist Fallback, loadAll() ist synchroner Pfad.
+                  if (typeof loadAll === 'function') await loadAll();
                   showToast('Projekt gelöscht', 'success');
                 } catch (err) {
                   showToast('Fehler: ' + err.message, 'error');
@@ -6994,6 +7002,9 @@ function ProjekteView({ setModal, refreshKey }) {
                     showToast('Projekt aktualisiert!', 'success');
                   }
                 }
+                // v22: nach DB-Write in Produktiv-Modus zentralen loadAll() triggern,
+                // damit mockProjekteData synchron aktualisiert wird (Realtime ist nur Fallback).
+                if (window.KRS_MODE === 'produktiv' && typeof loadAll === 'function') await loadAll();
               } catch (err) {
                 showToast('Fehler: ' + err.message, 'error');
                 return;
@@ -7077,7 +7088,7 @@ function ProjekteView({ setModal, refreshKey }) {
 // State-Change neu in den globalen Modal-Slot geschrieben wird (Prefill zieht,
 // Live-Eingaben werden reflected). Alter Bug: showModal() wurde synchron nach
 // setFormData() gerufen und las die stale Closure → Formular blieb leer.
-function LehrerView({ setModal, refreshKey }) {
+function LehrerView({ setModal, refreshKey, loadAll }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
 
@@ -7135,6 +7146,8 @@ function LehrerView({ setModal, refreshKey }) {
                 try {
                   if (window.KRS_MODE === 'produktiv') {
                     await (new window.KrsDataService()).deleteUser(editingId);
+                    // v22: Tabelle sofort neu laden (Realtime-Echo kommt ggf. verspätet)
+                    if (typeof loadAll === 'function') await loadAll();
                   } else {
                     const i = mockLehrerData.findIndex(l => l.id === editingId);
                     if (i !== -1) mockLehrerData.splice(i, 1);
@@ -7170,6 +7183,8 @@ function LehrerView({ setModal, refreshKey }) {
                     await svc.updateUser(editingId, payload);
                     showToast('Lehrer aktualisiert!', 'success');
                   }
+                  // v22: Tabelle sofort refreshen — nicht auf Realtime-Echo warten
+                  if (typeof loadAll === 'function') await loadAll();
                 } else {
                   if (editingId === 'new') {
                     mockLehrerData.push(formData);
