@@ -705,7 +705,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v20';
+  window.KRS_VERSION = 'v21';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -7072,9 +7072,16 @@ function ProjekteView({ setModal, refreshKey }) {
 }
 
 // === LEHRER ===
+// v21: Modal-Fix analog ProjekteView — showModal() entfernt.
+// Stattdessen useEffect([formData, editingId]), damit das Modal bei jedem
+// State-Change neu in den globalen Modal-Slot geschrieben wird (Prefill zieht,
+// Live-Eingaben werden reflected). Alter Bug: showModal() wurde synchron nach
+// setFormData() gerufen und las die stale Closure → Formular blieb leer.
 function LehrerView({ setModal, refreshKey }) {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState(null);
+
+  const closeModal = () => { setModal(null); setFormData(null); setEditingId(null); };
 
   const openCreateModal = () => {
     setFormData({
@@ -7085,20 +7092,19 @@ function LehrerView({ setModal, refreshKey }) {
       klassenlehrer_von: ''
     });
     setEditingId('new');
-    showModal();
   };
 
   const openEditModal = (lehrer) => {
     setFormData({...lehrer});
     setEditingId(lehrer.id);
-    showModal();
   };
 
-  const showModal = () => {
+  useEffect(() => {
+    if (!formData || !editingId) { setModal(null); return; }
     setModal(html`
-      <div class="modal-overlay" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>
+      <div class="modal-overlay" onClick=${closeModal}>
         <div class="modal-content" onClick=${e => e.stopPropagation()}>
-          <button class="modal-close" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }} aria-label="Schließen" title="Schließen (ESC)">×</button>
+          <button class="modal-close" onClick=${closeModal} aria-label="Schließen" title="Schließen (ESC)">×</button>
           <h2>${editingId === 'new' ? '➕ Lehrer einladen' : '✏️ Lehrer bearbeiten'}</h2>
           <div class="input-group">
             <label>Name *</label>
@@ -7186,7 +7192,7 @@ function LehrerView({ setModal, refreshKey }) {
         </div>
       </div>
     `);
-  };
+  }, [formData, editingId]);
 
   return html`
     <div class="main-header">
