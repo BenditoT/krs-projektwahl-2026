@@ -250,6 +250,8 @@ window.KRS_SUPABASE = {
 
   class KrsDataService {
     constructor() {
+      // Singleton: verhindert Multiple-GoTrueClient-Warnung & konkurrierende Auth-State-Listener
+      if (window.__krsServiceInstance) return window.__krsServiceInstance;
       this.isDemo = !HAS_SUPABASE;
       this.mode = HAS_SUPABASE ? 'produktiv' : 'demo';
       if (!this.isDemo) {
@@ -273,6 +275,7 @@ window.KRS_SUPABASE = {
           }
         });
       }
+      window.__krsServiceInstance = this;
     }
 
     // ---------- AUTH ----------
@@ -341,8 +344,8 @@ window.KRS_SUPABASE = {
     }
     onAuthStateChange(callback) {
       if (this.isDemo) return { unsubscribe: () => {} };
-      const { data } = this.client.auth.onAuthStateChange((_event, session) => {
-        try { callback(session); } catch (e) { console.error('[KRS] auth handler:', e); }
+      const { data } = this.client.auth.onAuthStateChange((event, session) => {
+        try { callback(session, event); } catch (e) { console.error('[KRS] auth handler:', e); }
       });
       return { unsubscribe: () => { try { data.subscription.unsubscribe(); } catch (_) {} } };
     }
@@ -919,8 +922,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     _showGate('live');
     // Session-Änderungen beobachten (z. B. Logout in anderem Tab)
-    svc.onAuthStateChange((session) => {
-      if (!session) window.location.reload();
+    // WICHTIG: Nur bei echtem SIGNED_OUT reloaden, NICHT bei INITIAL_SESSION (feuert immer beim Client-Init).
+    svc.onAuthStateChange((session, event) => {
+      if (event === 'SIGNED_OUT') window.location.reload();
     });
   } catch (e) {
     console.error('[KRS-Gate] init failed:', e);

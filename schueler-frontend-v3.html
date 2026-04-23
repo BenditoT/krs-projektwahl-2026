@@ -207,6 +207,8 @@ window.KRS_SUPABASE = {
 
   class KrsDataService {
     constructor() {
+      // Singleton: verhindert Multiple-GoTrueClient-Warnung & konkurrierende Auth-State-Listener
+      if (window.__krsServiceInstance) return window.__krsServiceInstance;
       this.isDemo = !HAS_SUPABASE;
       this.mode = HAS_SUPABASE ? 'produktiv' : 'demo';
       if (!this.isDemo) {
@@ -230,6 +232,7 @@ window.KRS_SUPABASE = {
           }
         });
       }
+      window.__krsServiceInstance = this;
     }
 
     // ---------- AUTH ----------
