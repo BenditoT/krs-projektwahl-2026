@@ -197,6 +197,9 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 </style>
 <!-- === KRS Supabase Integration (inline — keine externen .js-Dateien nötig) === -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- jsPDF + AutoTable für PDF-Export (Klassen-/Teilnehmerlisten) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 // ===== krs-supabase-config.js (inline) =====
 // Öffentlicher Schlüssel — darf im Frontend liegen. Schutz via RLS in Supabase.
@@ -328,6 +331,21 @@ window.KRS_SUPABASE = {
         if (error) return false;
         return data === true;
       } catch (_) { return false; }
+    }
+    // v24: akzeptiert super_admin + projektleitung (+ andere definierte Rollen) für Login
+    async isAppUser() {
+      if (this.isDemo) return true;
+      try {
+        const { data, error } = await this.client.rpc('is_app_user');
+        if (error) return false;
+        return data === true;
+      } catch (_) { return false; }
+    }
+    // v24: liefert nur die Rolle (für Gate + Role-Guard)
+    async getCurrentRolle() {
+      if (this.isDemo) return 'super_admin';
+      const u = await this.getCurrentDbUser();
+      return u ? u.rolle : null;
     }
     async getCurrentDbUser() {
       if (this.isDemo) return null;
@@ -537,6 +555,67 @@ window.KRS_SUPABASE = {
       if (error) throw new Error('deleteProjekt: ' + error.message);
       return { id };
     }
+    // ---------- PROJEKT-BILDER (v24) ----------
+    // Lädt ein Bild in den Bucket `projekt-bilder` hoch und aktualisiert die
+    // projekte.bild_url-Spalte. Bilder werden als projekte/<projekt_id>.<ext> abgelegt.
+    async uploadProjektBild(projektId, file) {
+      if (this.isDemo) {
+        // Demo: Data-URL erzeugen, damit die Vorschau im Browser funktioniert
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const url = reader.result;
+            const arr = window.MOCK_PROJEKTE || mockProjekteData || [];
+            const p = arr.find(x => x.id === projektId);
+            if (p) p.bild_url = url;
+            resolve({ url });
+          };
+          reader.onerror = () => reject(new Error('FileReader-Fehler'));
+          reader.readAsDataURL(file);
+        });
+      }
+      if (!file) throw new Error('uploadProjektBild: kein File übergeben');
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+      const cleanExt = ['jpg','jpeg','png','webp','gif'].includes(ext) ? ext : 'jpg';
+      const path = `projekte/${projektId}.${cleanExt}`;
+      const { error: upErr } = await this.client
+        .storage.from('projekt-bilder')
+        .upload(path, file, { upsert: true, contentType: file.type || ('image/' + cleanExt) });
+      if (upErr) throw new Error('uploadProjektBild: ' + upErr.message);
+      const { data: pub } = this.client.storage.from('projekt-bilder').getPublicUrl(path);
+      // Cache-Buster anhängen, damit nach Overwrite sofort das neue Bild angezeigt wird
+      const url = pub.publicUrl + '?t=' + Date.now();
+      const { error: updErr } = await this.client
+        .from('projekte').update({ bild_url: url }).eq('id', projektId);
+      if (updErr) throw new Error('uploadProjektBild/update: ' + updErr.message);
+      return { url, path };
+    }
+    async deleteProjektBild(projektId) {
+      if (this.isDemo) {
+        const arr = window.MOCK_PROJEKTE || mockProjekteData || [];
+        const p = arr.find(x => x.id === projektId);
+        if (p) p.bild_url = null;
+        return { ok: true };
+      }
+      // Bestehenden Pfad aus der bild_url extrahieren (falls möglich) —
+      // ansonsten versuchen wir, die häufigsten Extensions zu löschen.
+      const { data: row } = await this.client
+        .from('projekte').select('bild_url').eq('id', projektId).maybeSingle();
+      const url = row && row.bild_url ? String(row.bild_url) : '';
+      const pathsToTry = [];
+      if (url.includes('/projekt-bilder/')) {
+        const after = url.split('/projekt-bilder/')[1].split('?')[0];
+        pathsToTry.push(after);
+      } else {
+        ['jpg','jpeg','png','webp','gif'].forEach(e => pathsToTry.push(`projekte/${projektId}.${e}`));
+      }
+      if (pathsToTry.length) {
+        await this.client.storage.from('projekt-bilder').remove(pathsToTry).catch(() => {});
+      }
+      const { error } = await this.client.from('projekte').update({ bild_url: null }).eq('id', projektId);
+      if (error) throw new Error('deleteProjektBild: ' + error.message);
+      return { ok: true };
+    }
 
     // ---------- WAHLEN ----------
     async createWahl({ code, vorname, nachname, erstwahl_id, zweitwahl_id, drittwahl_id }) {
@@ -714,7 +793,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v23';
+  window.KRS_VERSION = 'v24';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -874,10 +953,11 @@ async function krsLoginLive() {
     const svc = new window.KrsDataService();
     const { data, error } = await svc.login(email, password);
     if (error) { _showLiveError(_translateAuthError(error.message)); return; }
-    const isAdmin = await svc.isAdmin();
-    if (!isAdmin) {
+    // v24: akzeptiert super_admin + projektleitung (+ andere registrierte Rollen)
+    const isUser = await svc.isAppUser();
+    if (!isUser) {
       await svc.logout();
-      _showLiveError('Dein Account ist kein Admin-Account.');
+      _showLiveError('Dein Account ist nicht für diese App freigeschaltet.');
       return;
     }
     _openApp();
@@ -931,28 +1011,128 @@ window.addEventListener('DOMContentLoaded', async () => {
   loading.style.display = 'block';
   try {
     const svc = new window.KrsDataService();
+
+    // v24: PASSWORD_RECOVERY-Handler (Magic-Link aus Einladungs-/Reset-Mail)
+    // Muss VOR der Session-Abfrage registriert werden, damit der Recovery-Event
+    // beim Öffnen des Magic-Links direkt abgefangen wird.
+    svc.onAuthStateChange((session, event) => {
+      if (event === 'SIGNED_OUT') {
+        window.location.reload();
+        return;
+      }
+      if (event === 'PASSWORD_RECOVERY') {
+        _showPasswordRecoveryModal();
+      }
+    });
+
+    // URL-Hash-Fallback: Supabase legt access_token + type=recovery als Fragment ab.
+    // Wenn der onAuthStateChange noch nicht gefeuert hat, prüfen wir den Hash direkt.
+    if (window.location.hash && window.location.hash.indexOf('type=recovery') !== -1) {
+      _showPasswordRecoveryModal();
+      return;
+    }
+
     const session = await svc.getSession();
     if (session) {
-      const isAdmin = await svc.isAdmin();
-      if (isAdmin) { _openApp(); return; }
-      // Eingeloggt, aber kein Admin → abmelden, Gate zeigen
+      const isUser = await svc.isAppUser();
+      if (isUser) { _openApp(); return; }
+      // Eingeloggt, aber nicht freigeschaltet → abmelden, Gate zeigen
       await svc.logout();
       _showGate('live');
-      _showLiveError('Dein Account ist kein Admin-Account.');
+      _showLiveError('Dein Account ist nicht für diese App freigeschaltet.');
       return;
     }
     _showGate('live');
-    // Session-Änderungen beobachten (z. B. Logout in anderem Tab)
-    // WICHTIG: Nur bei echtem SIGNED_OUT reloaden, NICHT bei INITIAL_SESSION (feuert immer beim Client-Init).
-    svc.onAuthStateChange((session, event) => {
-      if (event === 'SIGNED_OUT') window.location.reload();
-    });
   } catch (e) {
     console.error('[KRS-Gate] init failed:', e);
     _showGate('live');
     _showLiveError('Initialisierung fehlgeschlagen: ' + (e.message || e));
   }
 });
+
+// ============================================================
+// v24: Passwort-Setzen-Modal (für Einladungs- + Reset-Flow)
+// ============================================================
+function _showPasswordRecoveryModal() {
+  // Gate ausblenden
+  const gate = document.getElementById('loginGate');
+  if (gate) gate.style.display = 'none';
+  const app = document.getElementById('appContent');
+  if (app) app.style.display = 'none';
+
+  // Overlay bauen (kein Modal-Framework, pure DOM-API — XSS-sicher)
+  let overlay = document.getElementById('krsPwRecoveryOverlay');
+  if (overlay) { overlay.style.display = 'flex'; return; }
+
+  overlay = document.createElement('div');
+  overlay.id = 'krsPwRecoveryOverlay';
+  overlay.style.cssText = 'position:fixed;inset:0;display:flex;justify-content:center;align-items:center;min-height:100vh;background:linear-gradient(135deg,#4A6A83 0%,#3A5468 50%,#2A3E4C 100%);z-index:10001;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;';
+
+  const card = document.createElement('div');
+  card.style.cssText = 'background:rgba(255,255,255,0.97);border-radius:16px;padding:2.5rem 2rem;max-width:420px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.35);text-align:center;';
+
+  const h = document.createElement('h2');
+  h.textContent = 'Neues Passwort festlegen';
+  h.style.cssText = 'color:#2A3E4C;margin:0 0 0.5rem;font-size:1.35rem;';
+  card.appendChild(h);
+
+  const sub = document.createElement('p');
+  sub.textContent = 'Bitte lege ein eigenes Passwort fest (mindestens 8 Zeichen).';
+  sub.style.cssText = 'color:#6C7A87;margin:0 0 1.5rem;font-size:0.9rem;';
+  card.appendChild(sub);
+
+  const pw1 = document.createElement('input');
+  pw1.type = 'password'; pw1.placeholder = 'Neues Passwort'; pw1.autocomplete = 'new-password';
+  pw1.style.cssText = 'width:100%;padding:12px 14px;border:1px solid #D0D7DE;border-radius:8px;background:#FAFBFC;color:#2A3E4C;font-size:1rem;outline:none;box-sizing:border-box;margin-bottom:0.75rem;';
+  card.appendChild(pw1);
+
+  const pw2 = document.createElement('input');
+  pw2.type = 'password'; pw2.placeholder = 'Passwort wiederholen'; pw2.autocomplete = 'new-password';
+  pw2.style.cssText = 'width:100%;padding:12px 14px;border:1px solid #D0D7DE;border-radius:8px;background:#FAFBFC;color:#2A3E4C;font-size:1rem;outline:none;box-sizing:border-box;margin-bottom:1rem;';
+  card.appendChild(pw2);
+
+  const btn = document.createElement('button');
+  btn.textContent = '✓ Passwort speichern';
+  btn.style.cssText = 'width:100%;padding:12px;background:linear-gradient(135deg,#4A6A83,#3A5468);color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600;box-shadow:0 2px 8px rgba(74,106,131,0.3);';
+  card.appendChild(btn);
+
+  const msg = document.createElement('p');
+  msg.style.cssText = 'margin:0.8rem 0 0;font-size:0.85rem;font-weight:500;display:none;';
+  card.appendChild(msg);
+
+  overlay.appendChild(card);
+  document.body.appendChild(overlay);
+  setTimeout(() => pw1.focus(), 50);
+
+  function showMsg(text, kind) {
+    msg.textContent = text;
+    msg.style.color = (kind === 'ok') ? '#2B8A3E' : '#D93025';
+    msg.style.display = 'block';
+  }
+
+  btn.addEventListener('click', async () => {
+    const a = pw1.value || '';
+    const b = pw2.value || '';
+    if (a.length < 8) { showMsg('Passwort muss mindestens 8 Zeichen lang sein.', 'err'); return; }
+    if (a !== b) { showMsg('Die beiden Passwörter stimmen nicht überein.', 'err'); return; }
+    btn.disabled = true; btn.textContent = 'Speichere…';
+    try {
+      const svc = new window.KrsDataService();
+      const { error } = await svc.updatePassword(a);
+      if (error) { showMsg('Fehler: ' + error.message, 'err'); return; }
+      showMsg('Passwort gespeichert — du wirst weitergeleitet…', 'ok');
+      // URL-Hash (mit access_token) aufräumen, dann Reload ohne Fragment
+      setTimeout(() => {
+        const clean = window.location.origin + window.location.pathname + window.location.search;
+        window.location.replace(clean);
+      }, 1200);
+    } catch (e) {
+      showMsg('Unerwarteter Fehler: ' + (e.message || e), 'err');
+    } finally {
+      btn.disabled = false; btn.textContent = '✓ Passwort speichern';
+    }
+  });
+}
 </script>
 
 <script>
@@ -7092,6 +7272,63 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               </select>
             </div>
           </div>
+          <!-- v24: Projekt-Bild -->
+          <div class="input-group" style="margin-top:10px;">
+            <label>Projekt-Bild (optional, max. 5 MB)</label>
+            ${editingId === 'new' ? html`
+              <div style="padding:10px;background:#FAFBFC;border:1px dashed #D0D7DE;border-radius:6px;color:#6C7A87;font-size:0.85rem;">
+                💡 Speichere das Projekt zuerst — danach kannst du ein Bild hochladen.
+              </div>
+            ` : html`
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                ${formData?.bild_url ? html`
+                  <img src=${formData.bild_url} alt="Projekt-Bild"
+                    style="width:120px;height:80px;object-fit:cover;border-radius:6px;border:1px solid #D0D7DE;" />
+                ` : html`
+                  <div style="width:120px;height:80px;display:flex;align-items:center;justify-content:center;background:#F6F7F9;border:1px dashed #D0D7DE;border-radius:6px;color:#8B97A2;font-size:0.8rem;">Kein Bild</div>
+                `}
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" id="projektBildInput" style="display:none;"
+                    onChange=${async (e) => {
+                      const file = e.target.files && e.target.files[0];
+                      if (!file) return;
+                      if (file.size > 5 * 1024 * 1024) { showToast('Bild ist größer als 5 MB.', 'error'); return; }
+                      try {
+                        showToast('Bild wird hochgeladen…', 'info');
+                        const svc = new window.KrsDataService();
+                        const { url } = await svc.uploadProjektBild(editingId, file);
+                        setFormData({...formData, bild_url: url});
+                        if (typeof loadAll === 'function') await loadAll();
+                        showToast('Bild hochgeladen ✓', 'success');
+                      } catch (err) {
+                        showToast('Fehler: ' + err.message, 'error');
+                      } finally {
+                        e.target.value = '';
+                      }
+                    }} />
+                  <button type="button" class="btn btn-ghost" style="padding:6px 12px;font-size:0.85rem;"
+                    onClick=${() => document.getElementById('projektBildInput')?.click()}>
+                    ${formData?.bild_url ? '🔄 Bild ersetzen' : '📷 Bild hochladen'}
+                  </button>
+                  ${formData?.bild_url ? html`
+                    <button type="button" class="btn btn-danger" style="padding:6px 12px;font-size:0.85rem;"
+                      onClick=${async () => {
+                        if (!window.confirm('Bild wirklich entfernen?')) return;
+                        try {
+                          const svc = new window.KrsDataService();
+                          await svc.deleteProjektBild(editingId);
+                          setFormData({...formData, bild_url: null});
+                          if (typeof loadAll === 'function') await loadAll();
+                          showToast('Bild entfernt', 'success');
+                        } catch (err) {
+                          showToast('Fehler: ' + err.message, 'error');
+                        }
+                      }}>🗑 Entfernen</button>
+                  ` : ''}
+                </div>
+              </div>
+            `}
+          </div>
           <div class="btn-group" style="margin-top:20px;">
             <button class="btn btn-ghost" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>Abbrechen</button>
             ${editingId !== 'new' && html`
@@ -7189,6 +7426,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
       <table>
         <thead>
           <tr>
+            <th style="width:64px;">Bild</th>
             <th>Titel</th>
             <th>Lehrer</th>
             <th>Plätze</th>
@@ -7200,7 +7438,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
         </thead>
         <tbody>
           ${mockProjekteData.length === 0 ? html`
-            <tr><td colspan="7">
+            <tr><td colspan="8">
               <div class="empty-state">
                 <span class="empty-emoji">📋</span>
                 <div class="empty-title">Noch keine Projekte angelegt</div>
@@ -7213,6 +7451,13 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
             const lehrer = mockLehrerData.find(l => l.id === p.lehrer_id);
             return html`
               <tr>
+                <td>
+                  ${p.bild_url ? html`
+                    <img src=${p.bild_url} alt="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color, #D0D7DE);" />
+                  ` : html`
+                    <div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:#F6F7F9;border-radius:4px;border:1px dashed #D0D7DE;color:#8B97A2;font-size:1.1rem;">📷</div>
+                  `}
+                </td>
                 <td><strong>${p.titel}</strong><br/><small style="color:var(--text-muted);">${p.kurzbeschreibung}</small></td>
                 <td>${lehrer?.name || p.lehrer}</td>
                 <td>
@@ -8570,7 +8815,7 @@ function TauschwuenscheView({ setModal, refreshKey }) {
 }
 
 // === EXPORT ===
-// Task #3: CSV-Export mit echter Logik
+// Task #3: CSV-Export mit echter Logik + PDF-Export (Sprint C)
 function ExportView() {
   const service = useMemo(() => new window.KrsDataService(), []);
   const isDemo = service.mode !== 'produktiv';
@@ -8591,6 +8836,196 @@ function ExportView() {
   };
 
   const todayStr = () => new Date().toISOString().slice(0, 10);
+
+  // ---------- PDF-Helper (Sprint C, v24) ----------
+  // jsPDF ist via CDN geladen (window.jspdf.jsPDF). autotable erweitert die Klasse.
+  const getJsPDF = () => {
+    const lib = window.jspdf || window.jsPDF;
+    if (!lib || !(lib.jsPDF || lib)) throw new Error('jsPDF nicht geladen. Seite neu laden.');
+    return lib.jsPDF || lib;
+  };
+
+  // Header mit Logo + Titel + Datum auf einer Seite zeichnen
+  const drawPdfHeader = (pdf, titel, subtitel) => {
+    try {
+      pdf.addImage(LOGO_SRC, 'JPEG', 14, 10, 16, 16);
+    } catch(_) { /* Logo optional — wenn addImage fehlschlägt, ohne Logo weiter */ }
+    pdf.setFontSize(15);
+    pdf.setTextColor(74, 106, 131); // krs-blau
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Kurpfalz-Realschule Schriesheim', 34, 17);
+    pdf.setFontSize(11);
+    pdf.setTextColor(60, 60, 60);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Projektwoche 2026 · ' + titel, 34, 24);
+    if (subtitel) {
+      pdf.setFontSize(9);
+      pdf.setTextColor(120, 120, 120);
+      pdf.text(subtitel, 34, 29);
+    }
+    // Datum rechts
+    pdf.setFontSize(9);
+    pdf.setTextColor(120, 120, 120);
+    const datum = new Date().toLocaleDateString('de-DE', { year:'numeric', month:'2-digit', day:'2-digit' });
+    pdf.text('Stand: ' + datum, 196, 17, { align:'right' });
+    // Trennlinie
+    pdf.setDrawColor(222, 228, 235);
+    pdf.setLineWidth(0.3);
+    pdf.line(14, 33, 196, 33);
+  };
+
+  const drawPdfFooter = (pdf, pageNum, pageCount) => {
+    pdf.setFontSize(8);
+    pdf.setTextColor(140, 140, 140);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('KRS Projektwahl 2026', 14, 290);
+    pdf.text('Seite ' + pageNum + ' von ' + pageCount, 196, 290, { align:'right' });
+  };
+
+  // Gruppiert Zuteilungen nach einem Key (z.B. klasse oder projekt_titel)
+  const groupBy = (rows, keyFn) => {
+    const out = new Map();
+    rows.forEach(r => {
+      const k = keyFn(r) || '—';
+      if (!out.has(k)) out.set(k, []);
+      out.get(k).push(r);
+    });
+    return out;
+  };
+
+  // PDF: Klassenlisten — eine Seite pro Klasse mit allen Schülern und ihrem zugeteilten Projekt
+  const handleExportKlassenlisten = async () => {
+    try {
+      const data = isDemo
+        ? (window.MOCK_ZUTEILUNGEN || mockZuteilungenData || [])
+        : await service.listZuteilungen();
+      if (!data || data.length === 0) {
+        showToast('Keine Zuteilungsdaten vorhanden. Erst Verteilung laufen lassen.', 'error'); return;
+      }
+      const JsPDF = getJsPDF();
+      const pdf = new JsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+
+      // Sortierung: Klasse → Nachname → Vorname
+      const sorted = [...data].sort((a,b) => {
+        const k = String(a.klasse||'').localeCompare(String(b.klasse||''), 'de');
+        if (k !== 0) return k;
+        const n = String(a.nachname||'').localeCompare(String(b.nachname||''), 'de');
+        if (n !== 0) return n;
+        return String(a.vorname||'').localeCompare(String(b.vorname||''), 'de');
+      });
+      const grouped = groupBy(sorted, r => r.klasse);
+      const klassen = Array.from(grouped.keys()).sort((a,b) => a.localeCompare(b, 'de'));
+
+      klassen.forEach((klasse, idx) => {
+        if (idx > 0) pdf.addPage();
+        const rows = grouped.get(klasse);
+        drawPdfHeader(pdf, 'Klassenliste · ' + klasse, rows.length + ' Schüler:innen');
+        pdf.autoTable({
+          startY: 38,
+          head: [['Nr.', 'Nachname', 'Vorname', 'Projekt', 'Wahl']],
+          body: rows.map((r, i) => [
+            String(i+1),
+            r.nachname || '',
+            r.vorname || '',
+            r.projekt_titel || '—',
+            r.wahl_nr ? String(r.wahl_nr) + '.' : '–'
+          ]),
+          styles: { fontSize:9, cellPadding:2 },
+          headStyles: { fillColor:[74,106,131], textColor:[255,255,255], fontStyle:'bold' },
+          alternateRowStyles: { fillColor:[244,247,249] },
+          columnStyles: {
+            0: { cellWidth:10, halign:'right' },
+            1: { cellWidth:38 },
+            2: { cellWidth:38 },
+            3: { cellWidth:'auto' },
+            4: { cellWidth:14, halign:'center' },
+          },
+          margin: { left:14, right:14 },
+        });
+      });
+
+      // Footer auf jeder Seite
+      const pageCount = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) { pdf.setPage(i); drawPdfFooter(pdf, i, pageCount); }
+
+      pdf.save('krs-klassenlisten-' + todayStr() + '.pdf');
+      showToast('✓ Klassenlisten-PDF heruntergeladen (' + klassen.length + ' Klassen)', 'success');
+    } catch (e) {
+      showToast('PDF-Export fehlgeschlagen: ' + e.message, 'error');
+    }
+  };
+
+  // PDF: Teilnehmerlisten — eine Seite pro Projekt mit allen zugeteilten Schüler:innen
+  const handleExportTeilnehmerlisten = async () => {
+    try {
+      const data = isDemo
+        ? (window.MOCK_ZUTEILUNGEN || mockZuteilungenData || [])
+        : await service.listZuteilungen();
+      if (!data || data.length === 0) {
+        showToast('Keine Zuteilungsdaten vorhanden. Erst Verteilung laufen lassen.', 'error'); return;
+      }
+      const projekte = isDemo
+        ? (mockProjekteData || [])
+        : await service.listProjekte();
+      const projektMeta = new Map(projekte.map(p => [p.titel, p]));
+
+      const JsPDF = getJsPDF();
+      const pdf = new JsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+
+      const sorted = [...data].sort((a,b) => {
+        const p = String(a.projekt_titel||'').localeCompare(String(b.projekt_titel||''), 'de');
+        if (p !== 0) return p;
+        const k = String(a.klasse||'').localeCompare(String(b.klasse||''), 'de');
+        if (k !== 0) return k;
+        return String(a.nachname||'').localeCompare(String(b.nachname||''), 'de');
+      });
+      const grouped = groupBy(sorted, r => r.projekt_titel);
+      const projektTitel = Array.from(grouped.keys()).sort((a,b) => a.localeCompare(b, 'de'));
+
+      projektTitel.forEach((titel, idx) => {
+        if (idx > 0) pdf.addPage();
+        const rows = grouped.get(titel);
+        const meta = projektMeta.get(titel);
+        const subtitel = meta
+          ? ('Leitung: ' + (meta.lehrer_name || meta.lehrer || '—') + '  ·  ' + rows.length + '/' + (meta.max_plaetze || '?') + ' Plätze')
+          : (rows.length + ' Teilnehmer:innen');
+        drawPdfHeader(pdf, 'Teilnehmerliste · ' + titel, subtitel);
+
+        pdf.autoTable({
+          startY: 38,
+          head: [['Nr.', 'Klasse', 'Nachname', 'Vorname', 'Wahl', 'Anwesend']],
+          body: rows.map((r, i) => [
+            String(i+1),
+            r.klasse || '—',
+            r.nachname || '',
+            r.vorname || '',
+            r.wahl_nr ? String(r.wahl_nr) + '.' : '–',
+            '' // Anwesenheits-Checkbox-Spalte (leer zum Ankreuzen)
+          ]),
+          styles: { fontSize:9, cellPadding:2.5 },
+          headStyles: { fillColor:[232,119,34], textColor:[255,255,255], fontStyle:'bold' }, // krs-orange
+          alternateRowStyles: { fillColor:[253,242,232] },
+          columnStyles: {
+            0: { cellWidth:10, halign:'right' },
+            1: { cellWidth:18, halign:'center' },
+            2: { cellWidth:42 },
+            3: { cellWidth:42 },
+            4: { cellWidth:14, halign:'center' },
+            5: { cellWidth:'auto' },
+          },
+          margin: { left:14, right:14 },
+        });
+      });
+
+      const pageCount = pdf.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) { pdf.setPage(i); drawPdfFooter(pdf, i, pageCount); }
+
+      pdf.save('krs-teilnehmerlisten-' + todayStr() + '.pdf');
+      showToast('✓ Teilnehmerlisten-PDF heruntergeladen (' + projektTitel.length + ' Projekte)', 'success');
+    } catch (e) {
+      showToast('PDF-Export fehlgeschlagen: ' + e.message, 'error');
+    }
+  };
 
   const handleExportGesamt = async () => {
     try {
@@ -8662,14 +9097,18 @@ function ExportView() {
       <div class="dash-tile">
         <div class="dash-tile-label">PDF</div>
         <div class="dash-tile-value" style="font-size:18px;">Klassenlisten</div>
-        <div class="dash-tile-sub">Kommt in Sprint C (Opus)</div>
-        <button class="btn btn-secondary btn-small btn-full" style="margin-top:12px;" disabled>Demnächst</button>
+        <div class="dash-tile-sub">Eine Seite pro Klasse · mit KRS-Logo</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;" onClick=${handleExportKlassenlisten}>
+          ⬇️ PDF erstellen
+        </button>
       </div>
       <div class="dash-tile">
         <div class="dash-tile-label">PDF</div>
         <div class="dash-tile-value" style="font-size:18px;">Teilnehmerlisten</div>
-        <div class="dash-tile-sub">Kommt in Sprint C (Opus)</div>
-        <button class="btn btn-secondary btn-small btn-full" style="margin-top:12px;" disabled>Demnächst</button>
+        <div class="dash-tile-sub">Eine Seite pro Projekt · Anwesenheitsspalte</div>
+        <button class="btn btn-primary btn-small btn-full" style="margin-top:12px;" onClick=${handleExportTeilnehmerlisten}>
+          ⬇️ PDF erstellen
+        </button>
       </div>
     </div>
   `;
