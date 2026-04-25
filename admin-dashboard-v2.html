@@ -320,6 +320,18 @@ window.KRS_SUPABASE = {
         opts
       );
     }
+    // v25: Magic-Link-Einladung — legt auth.users-Eintrag an (shouldCreateUser:true),
+    // verknüpft via Trigger trg_auto_link_app_user automatisch mit public.users
+    // (Match per E-Mail). Lehrer klickt den Link in der Mail → ist eingeloggt.
+    async inviteUserByEmail(email, redirectTo) {
+      if (this.isDemo) return { error: { message: 'Einladen nur im Produktiv-Modus' } };
+      const opts = { shouldCreateUser: true };
+      if (redirectTo) opts.emailRedirectTo = redirectTo;
+      return this.client.auth.signInWithOtp({
+        email: String(email || '').trim().toLowerCase(),
+        options: opts,
+      });
+    }
     async updatePassword(newPassword) {
       if (this.isDemo) return { error: { message: 'Passwort ändern nur im Produktiv-Modus' } };
       return this.client.auth.updateUser({ password: String(newPassword || '') });
@@ -560,14 +572,24 @@ window.KRS_SUPABASE = {
     // projekte.bild_url-Spalte. Bilder werden als projekte/<projekt_id>.<ext> abgelegt.
     async uploadProjektBild(projektId, file) {
       if (this.isDemo) {
-        // Demo: Data-URL erzeugen, damit die Vorschau im Browser funktioniert
+        // Demo: Data-URL erzeugen, damit die Vorschau im Browser funktioniert.
+        // v25-Bugfix: in BEIDE Arrays schreiben — window.MOCK_PROJEKTE (Schüler-Quelle)
+        // UND mockProjekteData (die UI-Render-Quelle des Admin-Dashboards). Sie sind
+        // getrennte Arrays (mockProjekteData = [...MOCK_PROJEKTE_ADMIN]).
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
             const url = reader.result;
-            const arr = window.MOCK_PROJEKTE || mockProjekteData || [];
-            const p = arr.find(x => x.id === projektId);
-            if (p) p.bild_url = url;
+            try {
+              const a = window.MOCK_PROJEKTE || [];
+              const pa = a.find(x => x.id === projektId);
+              if (pa) pa.bild_url = url;
+            } catch (_) {}
+            try {
+              const b = (typeof mockProjekteData !== 'undefined') ? mockProjekteData : [];
+              const pb = b.find(x => x.id === projektId);
+              if (pb) pb.bild_url = url;
+            } catch (_) {}
             resolve({ url });
           };
           reader.onerror = () => reject(new Error('FileReader-Fehler'));
@@ -592,9 +614,17 @@ window.KRS_SUPABASE = {
     }
     async deleteProjektBild(projektId) {
       if (this.isDemo) {
-        const arr = window.MOCK_PROJEKTE || mockProjekteData || [];
-        const p = arr.find(x => x.id === projektId);
-        if (p) p.bild_url = null;
+        // v25-Bugfix: in BEIDE Mock-Arrays schreiben (siehe uploadProjektBild-Kommentar).
+        try {
+          const a = window.MOCK_PROJEKTE || [];
+          const pa = a.find(x => x.id === projektId);
+          if (pa) pa.bild_url = null;
+        } catch (_) {}
+        try {
+          const b = (typeof mockProjekteData !== 'undefined') ? mockProjekteData : [];
+          const pb = b.find(x => x.id === projektId);
+          if (pb) pb.bild_url = null;
+        } catch (_) {}
         return { ok: true };
       }
       // Bestehenden Pfad aus der bild_url extrahieren (falls möglich) —
@@ -7927,7 +7957,28 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
               <td>${u.email}</td>
               <td><span class=${"pill pill-" + (u.rolle === 'super_admin' ? 'error' : u.rolle === 'projektleitung' ? 'info' : 'success')}>${u.rolle}</span></td>
               <td>${u.klassenlehrer_von || '—'}</td>
-              <td class="actions-cell"><button class="btn btn-ghost btn-small" onClick=${() => openEditModal(u)}>✏️ Bearbeiten</button></td>
+              <td class="actions-cell" style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-ghost btn-small" onClick=${() => openEditModal(u)}>✏️ Bearbeiten</button>
+                <!-- v25: Magic-Link-Einladung. Auto-Link-Trigger verknüpft auth_user_id beim ersten Klick. -->
+                <button class="btn btn-ghost btn-small" title="Magic-Link-Einladung per E-Mail schicken"
+                  onClick=${async () => {
+                    if (!u.email) { showToast('Lehrer hat keine E-Mail-Adresse.', 'error'); return; }
+                    if (!window.confirm('Einladungs-Mail an ' + u.email + ' schicken?\n\nBeim Klick auf den Magic-Link wird der Lehrer automatisch eingeloggt und mit seinem App-Account verknüpft.')) return;
+                    try {
+                      if (window.KRS_MODE !== 'produktiv') {
+                        showToast('Demo-Modus — in Produktion würde an ' + u.email + ' gemailt.', 'info');
+                        return;
+                      }
+                      const svc = new window.KrsDataService();
+                      const redirect = window.location.origin + window.location.pathname;
+                      const { error } = await svc.inviteUserByEmail(u.email, redirect);
+                      if (error) throw new Error(error.message);
+                      showToast('✉ Einladungs-Mail an ' + u.email + ' verschickt.', 'success');
+                    } catch (err) {
+                      showToast('Fehler beim Einladen: ' + err.message, 'error');
+                    }
+                  }}>📧 Einladen</button>
+              </td>
             </tr>
           `)}
         </tbody>
