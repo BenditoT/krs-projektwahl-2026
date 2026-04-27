@@ -1,0 +1,58 @@
+import { test, expect, loginAs } from '../fixtures/app';
+
+test.describe.configure({ mode: 'serial' });
+
+/**
+ * Rollen-Schutz — prüft ALLOWED_SECTIONS je Rolle.
+ *
+ * ALLOWED_SECTIONS (v25):
+ *   super_admin:   null  → alle Sections sichtbar
+ *   projektleitung: dashboard, projekte, anmeldungen, export, phase, feedback
+ *   projektlehrer:  mein-projekt (NUR)
+ *   klassenlehrer:  dashboard, anmeldungen
+ */
+test.describe('Feature: Role Guard', () => {
+  test('projektleitung sieht Projekt-Tab aber keinen Lehrer-Tab', async ({ page }) => {
+    await loginAs(page, 'projektleitung');
+
+    // projektleitung hat Zugriff auf 'projekte'
+    const projektNav = page.locator(`[data-section="projekte"]`);
+    await expect(projektNav).toBeVisible({ timeout: 5_000 });
+
+    // projektleitung DARF KEINEN 'lehrer'-Tab sehen
+    const lehrerNav = page.locator(`[data-section="lehrer"]`);
+    await expect(lehrerNav).not.toBeVisible();
+  });
+
+  test('projektlehrer sieht NUR "Mein Projekt"-Tab', async ({ page }) => {
+    await loginAs(page, 'projektlehrer');
+
+    // Mein Projekt sichtbar
+    const meinProjektNav = page.locator(`[data-section="mein-projekt"]`);
+    await expect(meinProjektNav).toBeVisible({ timeout: 5_000 });
+
+    // Dashboard NICHT sichtbar für projektlehrer
+    const dashboardNav = page.locator(`[data-section="dashboard"]`);
+    await expect(dashboardNav).not.toBeVisible();
+
+    // Projekte-Tab NICHT sichtbar
+    const projekteNav = page.locator(`[data-section="projekte"]`);
+    await expect(projekteNav).not.toBeVisible();
+  });
+
+  test('klassenlehrer sieht dashboard und anmeldungen, nicht mehr', async ({ page }) => {
+    await loginAs(page, 'klassenlehrer');
+
+    // Dashboard sichtbar
+    const dashboardNav = page.locator(`[data-section="dashboard"]`);
+    await expect(dashboardNav).toBeVisible({ timeout: 5_000 });
+
+    // Anmeldungen sichtbar
+    const anmeldungenNav = page.locator(`[data-section="anmeldungen"]`);
+    await expect(anmeldungenNav).toBeVisible();
+
+    // Projekte NICHT sichtbar für klassenlehrer
+    const projekteNav = page.locator(`[data-section="projekte"]`);
+    await expect(projekteNav).not.toBeVisible();
+  });
+});
