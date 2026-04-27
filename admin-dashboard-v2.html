@@ -6252,6 +6252,14 @@ let mockUmbuchungen = [];
 let mockZuteilungenData = [];
 let mockVerteilungenData = [];
 
+// Bug 4 Fix: Mock-Daten auf window exposen damit Playwright-Fixtures zugreifen können
+if (typeof window !== 'undefined') {
+  window.mockSchueler = mockSchueler;
+  window.mockLehrerData = mockLehrerData;
+  window.mockProjekteData = mockProjekteData;
+  window.mockTauschData = mockTauschData;
+}
+
 // === Helper: Ersetze Inhalt eines Arrays, ohne Reference zu ändern ===
 // (mockSchueler / mockLehrerData / mockProjekteData sind `let` im Modul-Scope;
 //  Produktiv-Modus mutiert die Arrays per splice statt Neuzuweisung.)
@@ -7221,7 +7229,7 @@ S002;Erika;Musterfrau;7b;7</pre>
               </div>
             </td></tr>
           ` : gefiltert.map(s => html`
-            <tr>
+            <tr key=${s.code}>
               <td style="text-align:center;">
                 <input
                   type="checkbox"
@@ -7566,7 +7574,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
             const ueberbucht = p.erstwahl_wuensche > p.max_plaetze;
             const lehrer = mockLehrerData.find(l => l.id === p.lehrer_id);
             return html`
-              <tr>
+              <tr key=${p.id}>
                 <td>
                   ${p.bild_url ? html`
                     <img src=${p.bild_url} alt="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color, #D0D7DE);" />
@@ -8033,7 +8041,7 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
               </div>
             </td></tr>
           ` : mockLehrerData.map(u => html`
-            <tr>
+            <tr key=${u.id}>
               <td><strong>${u.name}</strong></td>
               <td>${u.email}</td>
               <td><span class=${"pill pill-" + (u.rolle === 'super_admin' ? 'error' : u.rolle === 'projektleitung' ? 'info' : 'success')}>${u.rolle}</span></td>
@@ -8753,7 +8761,7 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
           </thead>
           <tbody>
             ${gefiltert.slice(0, 200).map(z => html`
-              <tr>
+              <tr key=${z.schueler_code}>
                 <td><code>${z.schueler_code}</code></td>
                 <td>${z.vorname} ${z.nachname}</td>
                 <td>${z.klasse}</td>
@@ -9186,7 +9194,7 @@ function TauschwuenscheView({ setModal, refreshKey }) {
     `}
 
     ${wuensche.map(t => html`
-      <div class="card" style=${t.eins_zu_eins_moeglich ? "border-left:4px solid var(--success);" : ""}>
+      <div class="card" key=${t.id} style=${t.eins_zu_eins_moeglich ? "border-left:4px solid var(--success);" : ""}>
         <div style="display:flex;align-items:start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
           <div style="flex:1;min-width:200px;">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
