@@ -98,6 +98,8 @@ export async function seedMockData(page: Page, options: {
       win.mockSchueler.length = 0;
       opts.schueler.forEach((s: any) => win.mockSchueler.push(s));
     }
+    // v27/E1: signalisiert App-Komponente → bumpt refreshKey → Views rendern neu
+    win.dispatchEvent(new Event('krs:mock-seeded'));
   }, options);
   // kleines Timeout damit Preact re-rendert
   await page.waitForTimeout(150);

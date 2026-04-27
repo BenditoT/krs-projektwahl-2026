@@ -1662,8 +1662,8 @@ const MOCK_LEHRER = [
     "nachname": "Langensiepe",
     "kuerzel": "LAN",
     "email": "langensiepe@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
+    "rolle": "klassenlehrer",
+    "klassenlehrer_von": "7a"
   },
   {
     "id": "u24",
@@ -6432,7 +6432,7 @@ function App() {
         if (dbUser?.id) setCurrentDbUserId(dbUser.id);
         // v25: Projektlehrer landen direkt in "Mein Projekt"
         if (dbUser?.rolle === 'projektlehrer') setActiveSection('mein-projekt');
-        else if (dbUser?.rolle === 'klassenlehrer') setActiveSection('anmeldungen');
+        else if (dbUser?.rolle === 'klassenlehrer') setActiveSection('meine-klasse');
       } catch (e) { console.warn('[KRS] role fetch:', e); }
     })();
     loadAll();
@@ -6454,7 +6454,7 @@ function App() {
         setCurrentUserRolle(forced);
         // Default-Section analog zum Live-Login-Routing
         if (forced === 'projektlehrer') setActiveSection('mein-projekt');
-        else if (forced === 'klassenlehrer') setActiveSection('anmeldungen');
+        else if (forced === 'klassenlehrer') setActiveSection('meine-klasse');
         else setActiveSection('dashboard');
         // Globaler Hook für Tests, falls window.KRS_FORCE_ROLLE gelesen werden soll
         try { window.__KRS_FORCED_ROLLE = forced; } catch (_) {}
@@ -6481,6 +6481,15 @@ function App() {
       subs.forEach(s => { try { s && s.unsubscribe && s.unsubscribe(); } catch(e){} });
     };
   }, [mode, service, loadAll]);
+
+  // v27/E1: Test-Hook — `window.dispatchEvent(new Event('krs:mock-seeded'))`
+  // bumpt refreshKey, damit Views nach externer Mock-Mutation (seedMockData)
+  // neu rendern. Greift in jedem Modus, da harmlos.
+  useEffect(() => {
+    const onSeed = () => setRefreshKey(k => k + 1);
+    window.addEventListener('krs:mock-seeded', onSeed);
+    return () => window.removeEventListener('krs:mock-seeded', onSeed);
+  }, []);
 
   // Phasen-Wechsel im Produktiv-Modus in DB schreiben
   const handlePhaseChange = useCallback(async (newPhase) => {
@@ -6518,7 +6527,7 @@ function App() {
   const ALLOWED_SECTIONS = {
     super_admin: null, // null = alle erlaubt
     projektleitung: new Set(['dashboard', 'projekte', 'anmeldungen', 'export', 'phase', 'feedback']),
-    klassenlehrer: new Set(['dashboard', 'anmeldungen']),
+    klassenlehrer: new Set(['meine-klasse']),
     projektlehrer: new Set(['mein-projekt']),
   };
   const allowedSet = ALLOWED_SECTIONS[currentUserRolle] || null;
@@ -6558,6 +6567,8 @@ function App() {
     { section: 'lehrer', label: '👨‍🏫 Lehrer', always: true, badge: fmtCount(lehrerCount) },
     // v25: "Mein Projekt" — nur sichtbar für projektlehrer und super_admin (über ALLOWED_SECTIONS gefiltert)
     { section: 'mein-projekt', label: '📚 Mein Projekt', always: true },
+    // v27/E1: "Meine Klasse" — nur sichtbar für klassenlehrer und super_admin (über ALLOWED_SECTIONS gefiltert)
+    { section: 'meine-klasse', label: '📋 Meine Klasse', always: true },
     { type: 'divider', label: 'Ablauf' },
     { section: 'anmeldungen', label: '📋 Anmeldungen', phases: ['anmeldung', 'verteilung', 'nachbearbeitung'], badge: schuelerCount > 0 ? `${angemeldetCount}/${schuelerCount}` : null, recommended: phase === 'anmeldung' },
     { section: 'verteilung', label: '🎲 Verteilung', phases: ['verteilung', 'nachbearbeitung', 'projekttage'], recommended: phase === 'verteilung' },
@@ -6628,6 +6639,7 @@ function App() {
         ${activeSection === 'projekte' && html`<${ProjekteView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'lehrer' && html`<${LehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} />`}
         ${activeSection === 'mein-projekt' && html`<${ProjektLehrerView} setModal=${setModal} refreshKey=${refreshKey} loadAll=${loadAll} phase=${phase} currentDbUserId=${currentDbUserId} />`}
+        ${activeSection === 'meine-klasse' && html`<${KlassenlehrerView} refreshKey=${refreshKey} currentDbUserId=${currentDbUserId} />`}
         ${activeSection === 'anmeldungen' && html`<${AnmeldungenView} />`}
         ${activeSection === 'verteilung' && html`<${VerteilungView} setModal=${setModal} refreshKey=${refreshKey} reload=${loadAll} />`}
         ${activeSection === 'zuteilungen' && html`<${ZuteilungenView} setModal=${setModal} refreshKey=${refreshKey} reload=${loadAll} />`}
@@ -7546,7 +7558,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
         ${entwurfsCount > 0 ? html`
           <button class="btn btn-secondary" onClick=${handleBulkVeroeffentlichen}
-                  title="Alle Projekte mit Status „entwurf" auf „veröffentlicht" setzen">
+                  title='Alle Projekte mit Status „entwurf" auf „veröffentlicht" setzen'>
             📢 Alle Entwürfe veröffentlichen (${entwurfsCount})
           </button>
         ` : ''}
@@ -7896,6 +7908,102 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
         `)}
       </div>
     `}
+  `;
+}
+
+// === MEINE KLASSE (Klassenlehrer-Übersicht, v27/E1) ===
+// Read-Only-View für Rolle 'klassenlehrer': zeigt alle Schüler der eigenen Klasse
+// (users.klassenlehrer_von) mit Anmelde-Status und ggf. Zuteilung.
+// Demo-Fallback: ohne dbUserId nehmen wir den ersten klassenlehrer aus mockLehrerData.
+function KlassenlehrerView({ refreshKey, currentDbUserId }) {
+  const effectiveOwnerId = currentDbUserId
+    || (window.KRS_MODE !== 'produktiv'
+        ? (mockLehrerData.find(l => l.rolle === 'klassenlehrer') || {}).id
+        : null);
+
+  const lehrer = useMemo(
+    () => (mockLehrerData || []).find(l => l.id === effectiveOwnerId) || null,
+    [refreshKey, effectiveOwnerId]
+  );
+  const klasse = lehrer?.klassenlehrer_von || '';
+
+  const schueler = useMemo(() => {
+    if (!klasse) return [];
+    const k = String(klasse).toLowerCase();
+    return (mockSchueler || []).filter(s => String(s.klasse || '').toLowerCase() === k)
+      .sort((a, b) => String(a.nachname || '').localeCompare(String(b.nachname || ''), 'de'));
+  }, [refreshKey, klasse]);
+
+  const angemeldet = schueler.filter(s => s.hat_gewaehlt).length;
+  const offen = schueler.length - angemeldet;
+  const prozent = schueler.length > 0 ? Math.round((angemeldet / schueler.length) * 100) : 0;
+
+  if (!lehrer) {
+    return html`<div class="card"><div class="empty-state" style="padding:1rem;">Kein Klassenlehrer-Profil gefunden.</div></div>`;
+  }
+  if (!klasse) {
+    return html`
+      <div class="main-header">
+        <h1 class="main-title">Meine Klasse</h1>
+      </div>
+      <div class="card"><div class="empty-state" style="padding:1rem;">
+        Für deinen Account ist keine Klasse hinterlegt. Die Projektleitung kann das im Lehrer-Bereich nachtragen (Feld "Klassenlehrer von").
+      </div></div>
+    `;
+  }
+
+  const projektTitel = (id) => {
+    if (!id) return null;
+    const p = (mockProjekteData || []).find(x => x.id === id);
+    return p ? p.titel : null;
+  };
+
+  return html`
+    <div class="main-header">
+      <div>
+        <h1 class="main-title">Meine Klasse — ${klasse.toUpperCase()}</h1>
+        <div class="main-subtitle">${angemeldet} von ${schueler.length} angemeldet (${prozent}%) · ${offen} offen</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📋 Schüler dieser Klasse</h2>
+      ${schueler.length === 0 ? html`
+        <div class="empty-state" style="padding:1rem; color:var(--muted);">
+          Keine Schüler in Klasse ${klasse.toUpperCase()} gefunden.
+        </div>
+      ` : html`
+        <table data-testid="klassenlehrer-tabelle">
+          <thead>
+            <tr>
+              <th>Code</th>
+              <th>Nachname</th>
+              <th>Vorname</th>
+              <th>Status</th>
+              <th>Zuteilung</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${schueler.map(s => {
+              const titel = projektTitel(s.zuteilung);
+              return html`
+                <tr key=${s.code} data-testid="klassenlehrer-row" data-status=${s.hat_gewaehlt ? 'angemeldet' : 'offen'}>
+                  <td><code>${s.code}</code></td>
+                  <td>${s.nachname}</td>
+                  <td>${s.vorname}</td>
+                  <td>
+                    ${s.hat_gewaehlt
+                      ? html`<span class="badge badge-success">✓ Angemeldet</span>`
+                      : html`<span class="badge">○ Offen</span>`}
+                  </td>
+                  <td>${titel || html`<span style="color:var(--muted);">—</span>`}</td>
+                </tr>
+              `;
+            })}
+          </tbody>
+        </table>
+      `}
+    </div>
   `;
 }
 

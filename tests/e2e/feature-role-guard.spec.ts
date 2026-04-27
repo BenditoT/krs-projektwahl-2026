@@ -5,11 +5,11 @@ test.describe.configure({ mode: 'serial' });
 /**
  * Rollen-Schutz — prüft ALLOWED_SECTIONS je Rolle.
  *
- * ALLOWED_SECTIONS (v25):
+ * ALLOWED_SECTIONS (v27/E1):
  *   super_admin:   null  → alle Sections sichtbar
  *   projektleitung: dashboard, projekte, anmeldungen, export, phase, feedback
  *   projektlehrer:  mein-projekt (NUR)
- *   klassenlehrer:  dashboard, anmeldungen
+ *   klassenlehrer:  meine-klasse (NUR)
  */
 test.describe('Feature: Role Guard', () => {
   test('projektleitung sieht Projekt-Tab aber keinen Lehrer-Tab', async ({ page }) => {
@@ -40,19 +40,23 @@ test.describe('Feature: Role Guard', () => {
     await expect(projekteNav).not.toBeVisible();
   });
 
-  test('klassenlehrer sieht dashboard und anmeldungen, nicht mehr', async ({ page }) => {
+  test('klassenlehrer sieht NUR "Meine Klasse"-Tab', async ({ page }) => {
     await loginAs(page, 'klassenlehrer');
 
-    // Dashboard sichtbar
+    // Meine Klasse sichtbar
+    const meineKlasseNav = page.locator(`[data-section="meine-klasse"]`);
+    await expect(meineKlasseNav).toBeVisible({ timeout: 5_000 });
+
+    // Dashboard NICHT sichtbar für klassenlehrer
     const dashboardNav = page.locator(`[data-section="dashboard"]`);
-    await expect(dashboardNav).toBeVisible({ timeout: 5_000 });
+    await expect(dashboardNav).not.toBeVisible();
 
-    // Anmeldungen sichtbar
-    const anmeldungenNav = page.locator(`[data-section="anmeldungen"]`);
-    await expect(anmeldungenNav).toBeVisible();
-
-    // Projekte NICHT sichtbar für klassenlehrer
+    // Projekte NICHT sichtbar
     const projekteNav = page.locator(`[data-section="projekte"]`);
     await expect(projekteNav).not.toBeVisible();
+
+    // Anmeldungen NICHT sichtbar (war früher erlaubt, ist seit E1 entfernt)
+    const anmeldungenNav = page.locator(`[data-section="anmeldungen"]`);
+    await expect(anmeldungenNav).not.toBeVisible();
   });
 });
