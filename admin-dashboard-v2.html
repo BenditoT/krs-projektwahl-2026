@@ -823,7 +823,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v25';
+  window.KRS_VERSION = 'v25.1';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6340,7 +6340,7 @@ function App() {
   const service = useMemo(() => new window.KrsDataService(), []);
   const mode = service.mode;
 
-  const [phase, setPhase] = useState('anmeldung');
+  const [phase, setPhase] = useState(window.MOCK_PHASE || 'anmeldung');
   const [activeSection, setActiveSection] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -6429,6 +6429,30 @@ function App() {
     })();
     loadAll();
   }, [mode, service, loadAll]);
+
+  // v25.1: ?forceRolle=...-URL-Override für Test-Hermetik (NUR Demo-Modus).
+  // Erlaubt es Playwright-Tests, verschiedene Rollen zu simulieren ohne echte
+  // Auth-Roundtrips. Sicherheits-Constraint: greift nicht im Produktiv-Modus.
+  // Beispiele:
+  //   ?forceMode=demo&forceRolle=projektlehrer  → User sieht nur "Mein Projekt"
+  //   ?forceMode=demo&forceRolle=projektleitung → User sieht 6 Tabs (wie Nadine)
+  useEffect(() => {
+    if (mode === 'produktiv') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const forced = params.get('forceRolle');
+      const allowed = ['super_admin', 'projektleitung', 'projektlehrer', 'klassenlehrer'];
+      if (forced && allowed.includes(forced)) {
+        setCurrentUserRolle(forced);
+        // Default-Section analog zum Live-Login-Routing
+        if (forced === 'projektlehrer') setActiveSection('mein-projekt');
+        else if (forced === 'klassenlehrer') setActiveSection('anmeldungen');
+        else setActiveSection('dashboard');
+        // Globaler Hook für Tests, falls window.KRS_FORCE_ROLLE gelesen werden soll
+        try { window.__KRS_FORCED_ROLLE = forced; } catch (_) {}
+      }
+    } catch (_) {}
+  }, [mode]);
 
   // Realtime: Änderungen in DB → refresh
   useEffect(() => {
@@ -7455,13 +7479,63 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
     `);
   }, [formData, editingId]);
 
+  // v25: Bulk-Aktion — alle Entwürfe in einem Schwung veröffentlichen
+  const entwurfsCount = mockProjekteData.filter(p => p.status === 'entwurf').length;
+  const handleBulkVeroeffentlichen = async () => {
+    const entwuerfe = mockProjekteData.filter(p => p.status === 'entwurf');
+    if (!entwuerfe.length) { showToast('Keine Entwürfe zu veröffentlichen.', 'info'); return; }
+    if (!window.confirm(entwuerfe.length + ' Entwurf-Projekte veröffentlichen?')) return;
+    let ok = 0, fehler = 0;
+    try {
+      if (window.KRS_MODE === 'produktiv') {
+        const svc = new window.KrsDataService();
+        for (const p of entwuerfe) {
+          try { await svc.updateProjekt(p.id, { status: 'veroeffentlicht' }); ok++; }
+          catch (err) { console.warn('[bulk-veröffentlichen]', p.id, err); fehler++; }
+        }
+        if (typeof loadAll === 'function') await loadAll();
+      } else {
+        entwuerfe.forEach(p => { p.status = 'veroeffentlicht'; ok++; });
+      }
+      if (fehler === 0) showToast(ok + ' Projekte veröffentlicht ✓', 'success');
+      else showToast(ok + ' veröffentlicht, ' + fehler + ' Fehler — Konsole prüfen.', 'error');
+    } catch (err) {
+      showToast('Bulk-Aktion fehlgeschlagen: ' + err.message, 'error');
+    }
+  };
+
+  // v25: Inline-Status-Toggle pro Zeile (ohne Modal-Öffnen)
+  const handleStatusToggle = async (p) => {
+    const newStatus = p.status === 'veroeffentlicht' ? 'entwurf' : 'veroeffentlicht';
+    if (!window.confirm('Status von „' + (p.titel || 'Projekt') + '" auf „' + newStatus + '" setzen?')) return;
+    try {
+      if (window.KRS_MODE === 'produktiv') {
+        await (new window.KrsDataService()).updateProjekt(p.id, { status: newStatus });
+        if (typeof loadAll === 'function') await loadAll();
+      } else {
+        p.status = newStatus;
+      }
+      showToast('Status: ' + newStatus, 'success');
+    } catch (err) {
+      showToast('Fehler: ' + err.message, 'error');
+    }
+  };
+
   return html`
     <div class="main-header">
       <div>
         <h1 class="main-title">Projekte</h1>
-        <div class="main-subtitle">${mockProjekteData.length} Projekte angelegt</div>
+        <div class="main-subtitle">${mockProjekteData.length} Projekte angelegt${entwurfsCount ? ' · ' + entwurfsCount + ' Entwürfe' : ''}</div>
       </div>
-      <button class="btn btn-primary" onClick=${openCreateModal}>➕ Neues Projekt</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        ${entwurfsCount > 0 ? html`
+          <button class="btn btn-secondary" onClick=${handleBulkVeroeffentlichen}
+                  title="Alle Projekte mit Status „entwurf" auf „veröffentlicht" setzen">
+            📢 Alle Entwürfe veröffentlichen (${entwurfsCount})
+          </button>
+        ` : ''}
+        <button class="btn btn-primary" onClick=${openCreateModal}>➕ Neues Projekt</button>
+      </div>
     </div>
 
     <div class="table-wrapper">
@@ -7513,7 +7587,14 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                   <span class="pill pill-wahl-3">${p.drittwahl_wuensche}</span>
                   ${ueberbucht ? html`<br/><small style="color:var(--krs-orange);">⚠️ überbucht</small>` : ''}
                 </td>
-                <td><span class="pill pill-info">${p.status}</span></td>
+                <td>
+                  <span class=${"pill " + (p.status === 'veroeffentlicht' ? 'pill-success' : 'pill-info')}
+                        style="cursor:pointer;user-select:none;"
+                        title=${"Klicken: Status umschalten — aktuell „" + (p.status || 'entwurf') + "\""}
+                        onClick=${(e) => { e.stopPropagation(); handleStatusToggle(p); }}>
+                    ${p.status || 'entwurf'} ${p.status === 'veroeffentlicht' ? '✓' : '↻'}
+                  </span>
+                </td>
                 <td class="actions-cell">
                   <button class="btn btn-ghost btn-small" onClick=${() => openEditModal(p)}>✏️ Bearbeiten</button>
                 </td>
@@ -9590,13 +9671,15 @@ function EinstellungenView() {
   `;
 }
 
-render(html`<${App} />`, document.getElementById('app'));
-
-// Task #9: Login-Gate-Logo mit dem Base64-LOGO befüllen (LOGO_SRC erst hier definiert)
+// v25.1: Login-Gate-Logo SOFORT befüllen — vor render(), damit das Logo
+// auch dann sichtbar ist, wenn Preact noch lädt oder ein Renderingfehler auftritt.
+// Der ältere Hack lief erst nach render() und hatte dadurch eine Race-Condition.
 (function() {
   const img = document.getElementById('login-logo');
-  if (img) img.src = LOGO_SRC;
+  if (img && !img.src) img.src = LOGO_SRC;
 })();
+
+render(html`<${App} />`, document.getElementById('app'));
 </script>
 </body>
 </html>
