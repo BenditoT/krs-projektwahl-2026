@@ -589,6 +589,38 @@
       return data || { success: false, error: 'keine_antwort' };
     }
 
+    // Direkt-Einschreibung durch Klassenlehrer (Sprint E1.5).
+    // Demo: mutiert mockSchueler in-memory + dispatcht 'krs:mock-seeded'.
+    // Live: ruft RPC `klassenlehrer_assign_schueler`, das Klassen- und
+    //       Status-Constraints serverseitig prüft (RLS-sicher).
+    async klassenlehrerAssignSchueler({ code, projektId }) {
+      const cleanCode = String(code || '').toUpperCase().trim();
+      if (!cleanCode) return { success: false, error: 'code_fehlt' };
+
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
+        if (!s) return { success: false, error: 'schueler_unbekannt' };
+        if (projektId) {
+          s.zuteilung = projektId;
+          s.hat_gewaehlt = true;
+        } else {
+          s.zuteilung = null;
+          s.hat_gewaehlt = false;
+        }
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return { success: true, schueler_code: cleanCode, projekt_id: projektId || null };
+      }
+
+      const rpc = projektId ? 'klassenlehrer_assign_schueler' : 'klassenlehrer_unassign_schueler';
+      const params = projektId
+        ? { p_schueler_code: cleanCode, p_projekt_id: projektId }
+        : { p_schueler_code: cleanCode };
+      const { data, error } = await this.client.rpc(rpc, params);
+      if (error) throw new Error('klassenlehrerAssignSchueler: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
+
     // Manuelle Umbuchung einzelner Schüler (Admin)
     async updateZuteilung({ code, projektId, bearbeiterId, kommentar = null }) {
       const cleanCode = String(code || '').toUpperCase().trim();

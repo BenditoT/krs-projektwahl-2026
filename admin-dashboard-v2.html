@@ -774,6 +774,35 @@ window.KRS_SUPABASE = {
       if (error) throw new Error('runVerteilung: ' + error.message);
       return data || { success: false, error: 'keine_antwort' };
     }
+    // E1.5: Direkt-Einschreibung durch Klassenlehrer.
+    // Demo: mutiert mockSchueler[i].zuteilung + .hat_gewaehlt + dispatcht 'krs:mock-seeded'.
+    // Live: ruft RPC `klassenlehrer_assign_schueler` (oder _unassign), das
+    //       Klassen- und Status-Constraints serverseitig prüft (RLS-sicher).
+    async klassenlehrerAssignSchueler({ code, projektId }) {
+      const cleanCode = String(code || '').toUpperCase().trim();
+      if (!cleanCode) return { success: false, error: 'code_fehlt' };
+      if (this.isDemo) {
+        const list = (typeof window !== 'undefined' && window.mockSchueler) || [];
+        const s = list.find(x => String(x.code || '').toUpperCase() === cleanCode);
+        if (!s) return { success: false, error: 'schueler_unbekannt' };
+        if (projektId) {
+          s.zuteilung = projektId;
+          s.hat_gewaehlt = true;
+        } else {
+          s.zuteilung = null;
+          s.hat_gewaehlt = false;
+        }
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
+        return { success: true, schueler_code: cleanCode, projekt_id: projektId || null };
+      }
+      const rpc = projektId ? 'klassenlehrer_assign_schueler' : 'klassenlehrer_unassign_schueler';
+      const params = projektId
+        ? { p_schueler_code: cleanCode, p_projekt_id: projektId }
+        : { p_schueler_code: cleanCode };
+      const { data, error } = await this.client.rpc(rpc, params);
+      if (error) throw new Error('klassenlehrerAssignSchueler: ' + error.message);
+      return data || { success: false, error: 'keine_antwort' };
+    }
     async updateZuteilung({ code, projektId, bearbeiterId, kommentar = null }) {
       const cleanCode = String(code || '').toUpperCase().trim();
       if (!cleanCode || !projektId) return { success: false, error: 'parameter_fehlen' };
@@ -7911,11 +7940,17 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
   `;
 }
 
-// === MEINE KLASSE (Klassenlehrer-Übersicht, v27/E1) ===
-// Read-Only-View für Rolle 'klassenlehrer': zeigt alle Schüler der eigenen Klasse
-// (users.klassenlehrer_von) mit Anmelde-Status und ggf. Zuteilung.
-// Demo-Fallback: ohne dbUserId nehmen wir den ersten klassenlehrer aus mockLehrerData.
+// === MEINE KLASSE (Klassenlehrer-Übersicht, v27/E1 + v28/E1.5) ===
+// E1: Read-Only-View für Rolle 'klassenlehrer', filtert nach klassenlehrer_von.
+// E1.5: Zuteilung-Spalte editierbar — Dropdown listet veröffentlichte Projekte
+// gefiltert auf die Klassenstufe der Klasse. Setzt s.zuteilung (Projekt-ID) und
+// s.hat_gewaehlt zentral via service.klassenlehrerAssignSchueler — Demo mutiert
+// in-memory, Live ruft RPC mit RLS-Klassencheck.
 function KlassenlehrerView({ refreshKey, currentDbUserId }) {
+  const service = useMemo(() => new window.KrsDataService(), []);
+  const [localKey, setLocalKey] = useState(0);
+  const [busyCode, setBusyCode] = useState(null);
+
   const effectiveOwnerId = currentDbUserId
     || (window.KRS_MODE !== 'produktiv'
         ? (mockLehrerData.find(l => l.rolle === 'klassenlehrer') || {}).id
@@ -7923,7 +7958,7 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
 
   const lehrer = useMemo(
     () => (mockLehrerData || []).find(l => l.id === effectiveOwnerId) || null,
-    [refreshKey, effectiveOwnerId]
+    [refreshKey, localKey, effectiveOwnerId]
   );
   const klasse = lehrer?.klassenlehrer_von || '';
 
@@ -7932,7 +7967,28 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
     const k = String(klasse).toLowerCase();
     return (mockSchueler || []).filter(s => String(s.klasse || '').toLowerCase() === k)
       .sort((a, b) => String(a.nachname || '').localeCompare(String(b.nachname || ''), 'de'));
-  }, [refreshKey, klasse]);
+  }, [refreshKey, localKey, klasse]);
+
+  // Klassenstufe aus dem ersten Schüler ableiten — alle Schüler einer Klasse
+  // haben dieselbe klassenstufe. Fallback: aus Klassen-Namen parsen ("7a" → 7).
+  const klassenstufe = useMemo(() => {
+    if (schueler.length > 0 && schueler[0].klassenstufe) return schueler[0].klassenstufe;
+    const m = String(klasse || '').match(/^(\d+)/);
+    return m ? parseInt(m[1], 10) : null;
+  }, [schueler, klasse]);
+
+  // Dropdown-Optionen: nur veröffentlichte Projekte, passende Klassenstufe.
+  const verfuegbareProjekte = useMemo(() => {
+    return (mockProjekteData || [])
+      .filter(p => p.status === 'veroeffentlicht')
+      .filter(p => {
+        if (klassenstufe == null) return true;
+        const minOk = p.min_klasse == null || klassenstufe >= p.min_klasse;
+        const maxOk = p.max_klasse == null || klassenstufe <= p.max_klasse;
+        return minOk && maxOk;
+      })
+      .sort((a, b) => String(a.titel || '').localeCompare(String(b.titel || ''), 'de'));
+  }, [refreshKey, localKey, klassenstufe]);
 
   const angemeldet = schueler.filter(s => s.hat_gewaehlt).length;
   const offen = schueler.length - angemeldet;
@@ -7952,10 +8008,44 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
     `;
   }
 
-  const projektTitel = (id) => {
-    if (!id) return null;
-    const p = (mockProjekteData || []).find(x => x.id === id);
+  // Defensiv: zuteilung kann historisch sowohl Projekt-ID (KlassenlehrerView /
+  // E1.5) als auch Projekt-Titel (UmbuchungView pre-existing) sein.
+  const projektTitel = (idOrTitle) => {
+    if (!idOrTitle) return null;
+    const p = (mockProjekteData || []).find(x => x.id === idOrTitle || x.titel === idOrTitle);
     return p ? p.titel : null;
+  };
+
+  // Für das select brauchen wir den ID-Wert. Wenn s.zuteilung ein Titel ist,
+  // resolven wir auf die ID, damit die Auswahl im Dropdown markiert wird.
+  const zuteilungId = (val) => {
+    if (!val) return '';
+    const p = (mockProjekteData || []).find(x => x.id === val || x.titel === val);
+    return p ? p.id : '';
+  };
+
+  const onAssign = async (code, neueProjektId) => {
+    setBusyCode(code);
+    try {
+      const r = await service.klassenlehrerAssignSchueler({ code, projektId: neueProjektId || null });
+      if (r && r.success === false) {
+        showToast('Fehler: ' + (r.error || 'unbekannt'), 'error');
+        return;
+      }
+      setLocalKey(k => k + 1);
+      const s = (mockSchueler || []).find(x => x.code === code);
+      const name = s ? `${s.vorname} ${s.nachname}` : code;
+      if (neueProjektId) {
+        const titel = projektTitel(neueProjektId);
+        showToast(`${name} wurde „${titel}" zugewiesen`, 'success');
+      } else {
+        showToast(`${name}: Zuteilung entfernt`, 'success');
+      }
+    } catch (err) {
+      showToast('Fehler: ' + (err.message || err), 'error');
+    } finally {
+      setBusyCode(null);
+    }
   };
 
   return html`
@@ -7968,6 +8058,7 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
 
     <div class="card">
       <h2>📋 Schüler dieser Klasse</h2>
+      <p><small style="color:var(--muted);">Du kannst Schüler ohne Anmeldung direkt einem Projekt zuweisen — die Auswahl ist auf veröffentlichte Projekte für Klassenstufe ${klassenstufe ?? '—'} begrenzt.</small></p>
       ${schueler.length === 0 ? html`
         <div class="empty-state" style="padding:1rem; color:var(--muted);">
           Keine Schüler in Klasse ${klasse.toUpperCase()} gefunden.
@@ -7985,7 +8076,8 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
           </thead>
           <tbody>
             ${schueler.map(s => {
-              const titel = projektTitel(s.zuteilung);
+              const selected = zuteilungId(s.zuteilung);
+              const isBusy = busyCode === s.code;
               return html`
                 <tr key=${s.code} data-testid="klassenlehrer-row" data-status=${s.hat_gewaehlt ? 'angemeldet' : 'offen'}>
                   <td><code>${s.code}</code></td>
@@ -7996,7 +8088,21 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
                       ? html`<span class="badge badge-success">✓ Angemeldet</span>`
                       : html`<span class="badge">○ Offen</span>`}
                   </td>
-                  <td>${titel || html`<span style="color:var(--muted);">—</span>`}</td>
+                  <td>
+                    <select
+                      data-testid="klassenlehrer-zuteilung-select"
+                      data-code=${s.code}
+                      value=${selected}
+                      disabled=${isBusy}
+                      onChange=${e => onAssign(s.code, e.target.value || null)}
+                      style="min-width:220px;"
+                    >
+                      <option value="">— keine —</option>
+                      ${verfuegbareProjekte.map(p => html`
+                        <option value=${p.id}>${p.titel}</option>
+                      `)}
+                    </select>
+                  </td>
                 </tr>
               `;
             })}
