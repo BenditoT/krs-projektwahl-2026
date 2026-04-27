@@ -6287,6 +6287,7 @@ if (typeof window !== 'undefined') {
   window.mockLehrerData = mockLehrerData;
   window.mockProjekteData = mockProjekteData;
   window.mockTauschData = mockTauschData;
+  window.mockUmbuchungen = mockUmbuchungen;
 }
 
 // === Helper: Ersetze Inhalt eines Arrays, ohne Reference zu ändern ===
@@ -6370,6 +6371,25 @@ function showToast(message, type = 'success') {
   container.appendChild(toast);
 
   setTimeout(() => toast.remove(), 5000);
+}
+
+// Defensiver Lookup: schueler.zuteilung kann historisch ein Projekt-Titel
+// (UmbuchungView pre-v29) oder eine Projekt-ID (KlassenlehrerView ab E1.5,
+// UmbuchungView ab v29) sein. Liefert den Titel oder null.
+function resolveProjektTitel(idOrTitle) {
+  if (!idOrTitle) return null;
+  const list = (typeof window !== 'undefined' && window.mockProjekteData) || [];
+  const p = list.find(x => x.id === idOrTitle || x.titel === idOrTitle);
+  return p ? p.titel : null;
+}
+
+function htmlEscape(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 // === APP ===
@@ -7283,7 +7303,7 @@ S002;Erika;Musterfrau;7b;7</pre>
               <td>${s.vorname} ${s.nachname}</td>
               <td>${s.klasse}</td>
               <td>${s.hat_gewaehlt ? html`<span class="pill pill-success">✓ angemeldet</span>` : html`<span class="pill pill-warning">⏳ fehlt</span>`}</td>
-              <td>${s.zuteilung || '—'}</td>
+              <td>${resolveProjektTitel(s.zuteilung) || s.zuteilung || '—'}</td>
               <td class="actions-cell">
                 <button class="btn btn-ghost btn-small" onClick=${() => printSerienbriefe('override', [s])} title=${`Nur Brief für ${s.vorname} ${s.nachname} drucken`}>🖨️ Brief</button>
               </td>
@@ -8048,12 +8068,85 @@ function KlassenlehrerView({ refreshKey, currentDbUserId }) {
     }
   };
 
+  // E1.6: Erinnerungs-Trigger — öffnet eine druckbare Liste mit den offenen
+  // Schülern (Vorname, Nachname, Code, Anmelde-URL). Klassenlehrer kann das
+  // ausdrucken und in der Klasse austeilen oder an die Tafel hängen.
+  // Schüler haben keine eigenen E-Mail-Adressen → Mailto-BCC ist nicht möglich.
+  const offeneSchueler = useMemo(
+    () => schueler.filter(s => !s.hat_gewaehlt && !s.zuteilung),
+    [schueler]
+  );
+  const handleErinnerung = () => {
+    if (offeneSchueler.length === 0) {
+      showToast('Keine offenen Schüler — alle haben bereits gewählt oder sind zugewiesen.', 'success');
+      return;
+    }
+    const heute = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'long', year: 'numeric' });
+    const url = (window.KRS_SUPABASE && window.KRS_SUPABASE.schueler_url)
+      || 'https://benditot.github.io/krs-projektwahl-2026/schueler.html';
+    const klasseUC = (klasse || '').toUpperCase();
+    const w = window.open('', '_blank', 'width=820,height=1100');
+    if (!w) {
+      showToast('Bitte Popup-Blocker erlauben — Druckansicht konnte nicht geöffnet werden.', 'error');
+      return;
+    }
+    const rows = offeneSchueler.map(s => `
+      <tr>
+        <td>${htmlEscape(s.vorname)} ${htmlEscape(s.nachname)}</td>
+        <td><code>${htmlEscape(s.code)}</code></td>
+        <td>${htmlEscape(url)}</td>
+      </tr>
+    `).join('');
+    w.document.write(`<!doctype html>
+<html lang="de"><head><meta charset="utf-8" />
+<title>Erinnerung Projektwoche – Klasse ${htmlEscape(klasseUC)}</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; padding: 24pt; color: #111; }
+  h1 { font-size: 18pt; margin: 0 0 4pt; }
+  .meta { color: #555; font-size: 11pt; margin-bottom: 16pt; }
+  table { width: 100%; border-collapse: collapse; font-size: 11pt; }
+  th, td { padding: 6pt 8pt; text-align: left; border-bottom: 1px solid #ccc; vertical-align: top; }
+  th { background: #f5f5f5; font-weight: 600; }
+  code { font-family: ui-monospace, Menlo, monospace; background: #f0f0f0; padding: 1pt 4pt; border-radius: 3pt; }
+  .note { margin-top: 18pt; font-size: 10pt; color: #555; line-height: 1.5; }
+  @media print { body { padding: 12mm; } .no-print { display: none; } }
+</style>
+</head><body>
+<h1>Erinnerung Projektwoche-Anmeldung</h1>
+<div class="meta">Klasse <strong>${htmlEscape(klasseUC)}</strong> · ${htmlEscape(heute)} · ${offeneSchueler.length} offene Schüler:innen</div>
+<table>
+  <thead><tr><th>Name</th><th>Anmelde-Code</th><th>Anmelde-Link</th></tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+<p class="note">
+  Bitte denkt an eure Anmeldung zur Projektwoche. Geht auf den oben genannten Link,
+  gebt euren Anmelde-Code ein und wählt drei Projekte in der Reihenfolge eurer Vorlieben.
+</p>
+<p class="no-print" style="margin-top:24pt;">
+  <button onclick="window.print()" style="padding:8pt 16pt;font-size:12pt;">🖨️ Drucken</button>
+</p>
+</body></html>`);
+    w.document.close();
+    showToast(`Druckansicht für ${offeneSchueler.length} offene Schüler geöffnet.`, 'success');
+  };
+
   return html`
     <div class="main-header">
       <div>
         <h1 class="main-title">Meine Klasse — ${klasse.toUpperCase()}</h1>
         <div class="main-subtitle">${angemeldet} von ${schueler.length} angemeldet (${prozent}%) · ${offen} offen</div>
       </div>
+      ${offeneSchueler.length > 0 && html`
+        <div class="btn-group">
+          <button
+            class="btn btn-secondary btn-small"
+            data-testid="klassenlehrer-erinnerung-btn"
+            onClick=${handleErinnerung}
+            title="Druckbare Liste der offenen Schüler mit Anmelde-Code">
+            📧 Erinnerung an ${offeneSchueler.length} offene Schüler
+          </button>
+        </div>
+      `}
     </div>
 
     <div class="card">
@@ -8801,22 +8894,27 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
   const [filterProjekt, setFilterProjekt] = useState('');
   const [filterWahl, setFilterWahl] = useState('');
 
-  // Quelle: live geladene Zuteilungen, oder im Demo-Mode aus mockSchueler ableiten
+  // Quelle: live geladene Zuteilungen, oder im Demo-Mode aus mockSchueler ableiten.
+  // mockSchueler.zuteilung ist ab v29 die Projekt-ID (KlassenlehrerView + UmbuchungView
+  // schreiben konsistent ID); resolveProjektTitel akzeptiert auch den Legacy-Title-Wert.
   const zuteilungen = useMemo(() => {
     if (isDemo) {
-      // Im Demo-Mode haben wir keine echten Zuteilungen — synthetisieren wir
-      // sie aus mockSchueler.zuteilung (das ist im Demo ein Projekt-Titel).
       return (mockSchueler || [])
         .filter(s => s.zuteilung)
-        .map(s => normalizeZuteilungRow({
-          schueler_code: s.code,
-          vorname: s.vorname,
-          nachname: s.nachname,
-          klasse: s.klasse,
-          klassenstufe: s.klassenstufe,
-          projekt_titel: s.zuteilung,
-          wahl_nr: 1
-        }));
+        .map(s => {
+          const list = mockProjekteData || [];
+          const proj = list.find(p => p.id === s.zuteilung || p.titel === s.zuteilung) || null;
+          return normalizeZuteilungRow({
+            schueler_code: s.code,
+            vorname: s.vorname,
+            nachname: s.nachname,
+            klasse: s.klasse,
+            klassenstufe: s.klassenstufe,
+            projekt_id: proj ? proj.id : null,
+            projekt_titel: proj ? proj.titel : s.zuteilung,
+            wahl_nr: 1
+          });
+        });
     }
     return (mockZuteilungenData || []).map(normalizeZuteilungRow);
   }, [refreshKey, isDemo]);
@@ -9018,9 +9116,10 @@ function ZuteilungenView({ setModal, refreshKey, reload }) {
 // === MANUELLE UMBUCHUNG ===
 //
 // Dual-Mode:
-//   - Demo:      Mutation auf mockSchueler.zuteilung (Projekt-Titel als String)
+//   - Demo:      Mutation auf mockSchueler.zuteilung (Projekt-ID als String, ab v29)
 //   - Produktiv: service.updateZuteilung({ code, projektId, kommentar })
-//                — RPC akzeptiert Überbuchung (flagged), prüft Klassenstufe.
+//                — RPC akzeptiert Überbuchung (flagged), prüft Klassenstufe,
+//                seit v29 mit Caller-Rollencheck (admin/projektleitung).
 function UmbuchungView({ setModal, refreshKey, reload }) {
   const service = useMemo(() => new window.KrsDataService(), []);
   const isDemo = service.mode !== 'produktiv';
@@ -9031,10 +9130,11 @@ function UmbuchungView({ setModal, refreshKey, reload }) {
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Aktuelle Zuteilung des ausgewählten Schülers — aus mockZuteilungenData
+  // Aktuelle Zuteilung des ausgewählten Schülers.
+  // Demo: s.zuteilung ist ID (v29) oder Legacy-Titel — resolveProjektTitel deckt beides ab.
   const aktuelleZuteilung = useMemo(() => {
     if (!selectedStudent) return null;
-    if (isDemo) return selectedStudent.zuteilung || null;
+    if (isDemo) return resolveProjektTitel(selectedStudent.zuteilung) || selectedStudent.zuteilung || null;
     const z = (mockZuteilungenData || []).find(x =>
       String(x.schueler_code || '').toUpperCase() === String(selectedStudent.code || '').toUpperCase()
     );
@@ -9060,17 +9160,22 @@ function UmbuchungView({ setModal, refreshKey, reload }) {
     setBusy(true);
     try {
       if (isDemo) {
-        // Demo: Mutation in-memory
+        // Demo: Mutation in-memory. Wir schreiben jetzt konsistent die Projekt-ID
+        // (v29 E1.7 Cleanup). History-Einträge bekommen die Titel als Display-Snapshot.
         const projObj = (mockProjekteData || []).find(p => p.id === selectedProject || p.titel === selectedProject);
         const projTitel = projObj ? projObj.titel : selectedProject;
+        const projId = projObj ? projObj.id : selectedProject;
+        const altesTitel = resolveProjektTitel(selectedStudent.zuteilung) || selectedStudent.zuteilung || null;
         mockUmbuchungen.push({
           timestamp: new Date().toISOString(),
           schueler: selectedStudent,
-          altes_projekt: selectedStudent.zuteilung,
+          altes_projekt: altesTitel,
           neues_projekt: projTitel,
           grund: reason
         });
-        selectedStudent.zuteilung = projTitel;
+        selectedStudent.zuteilung = projId;
+        selectedStudent.hat_gewaehlt = true;
+        try { window.dispatchEvent(new Event('krs:mock-seeded')); } catch (_) {}
         showToast(`${selectedStudent.vorname} erfolgreich in ${projTitel} umgebucht!`, 'success');
       } else {
         // Produktiv: Service-Call → RPC update_zuteilung
@@ -9120,7 +9225,7 @@ function UmbuchungView({ setModal, refreshKey, reload }) {
           ${searchResults.map(s => html`
             <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;cursor:pointer;${selectedStudent?.code === s.code ? 'background:var(--krs-blau-lighter);border-color:var(--krs-blau);' : ''}" onClick=${() => { setSelectedStudent(s); setSelectedProject(null); setReason(''); }}>
               <strong>${s.vorname} ${s.nachname}</strong> <span style="color:var(--text-muted);">${s.code} · ${s.klasse}</span><br/>
-              <small>Aktuell: ${(isDemo ? s.zuteilung : null) || 'wird beim Auswählen geladen'}</small>
+              <small>Aktuell: ${(isDemo ? (resolveProjektTitel(s.zuteilung) || s.zuteilung) : null) || 'wird beim Auswählen geladen'}</small>
             </div>
           `)}
         </div>

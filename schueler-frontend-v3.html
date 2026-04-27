@@ -171,7 +171,13 @@ window.KRS_SUPABASE = {
   'use strict';
 
   const CFG = window.KRS_SUPABASE || {};
+  // v30/E2: ?forceMode=demo erzwingt Demo-Mode auch wenn Supabase verfügbar wäre.
+  // Schützt Tests + Live-Production vor versehentlichen Mock-/Test-Mutationen.
+  const _qs = (typeof window !== 'undefined' && window.location)
+    ? new URLSearchParams(window.location.search) : null;
+  const _forceMode = _qs ? _qs.get('forceMode') : null;
   const HAS_SUPABASE =
+    _forceMode !== 'demo' &&
     !!CFG.url &&
     !!(CFG.publishableKey || CFG.anonKey) &&
     typeof window.supabase !== 'undefined';
@@ -492,6 +498,18 @@ window.KRS_SUPABASE = {
         if (s.status && s.status.hat_gewaehlt) return { success: false, error: 'bereits_angemeldet' };
         const ids = [erstwahl_id, zweitwahl_id, drittwahl_id];
         if (new Set(ids).size !== 3) return { success: false, error: 'unterschiedliche_wahlen' };
+        // v30/E2: Klassenstufen-Range prüfen (Konsistenz mit Live-RPC create_wahl).
+        // Frontend filtert die Auswahl bereits, aber DOM-Tampering / Tests könnten
+        // sonst gegen die Range buchen. Hard-Block hier macht Demo gleich verlässlich.
+        const projekte = window.MOCK_PROJEKTE || [];
+        const klassenstufe = s.klassenstufe;
+        for (const id of ids) {
+          const p = projekte.find(x => x.id === id);
+          if (!p) return { success: false, error: 'projekt_unbekannt' };
+          if (klassenstufe != null && (klassenstufe < p.min_klasse || klassenstufe > p.max_klasse)) {
+            return { success: false, error: 'klassenstufe_passt_nicht' };
+          }
+        }
         s.status = {
           hat_gewaehlt: true,
           wahlen: { erstwahl_id, zweitwahl_id, drittwahl_id, gewaehlt_am: new Date().toISOString() },
@@ -651,7 +669,8 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE);
+  window.KRS_VERSION = 'v30';
+  console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '— Version:', window.KRS_VERSION);
 })();
 </script>
 </head>
@@ -883,6 +902,8 @@ function App() {
           name_stimmt_nicht: 'Name und Code passen nicht zusammen.',
           bereits_angemeldet: 'Du hast bereits eine Wahl abgegeben.',
           unterschiedliche_wahlen: 'Die drei Projekte müssen unterschiedlich sein.',
+          klassenstufe_passt_nicht: 'Eines der gewählten Projekte ist nicht für deine Klassenstufe.',
+          projekt_unbekannt: 'Eines der Projekte ist nicht (mehr) verfügbar. Bitte Seite neu laden.',
         }[code] || ('Es gab ein Problem (' + code + '). Bitte sag deinem Klassenlehrer Bescheid.');
         setSubmitError(msg);
         return;
@@ -1216,13 +1237,26 @@ function MeinErgebnis({ schueler, projekte, onTausch, onClose, phase }) {
   const zuteilung = schueler.status.zuteilung;
   const projekt = projekte.find(p => p.id === zuteilung.projekt_id);
   const wahlNr = zuteilung.wahl_nr;
-  
+
   const wahlLabel = {
     1: { text: '1. Wahl 🎯', color: 'wahl-1', message: 'Das war deine Erstwahl — super!' },
     2: { text: '2. Wahl', color: 'wahl-2', message: 'Das war deine Zweitwahl.' },
     3: { text: '3. Wahl', color: 'wahl-3', message: 'Das war deine Drittwahl.' }
   }[wahlNr] || { text: 'Zuteilung', color: 'wahl-none', message: 'Wurde manuell zugeteilt.' };
-  
+
+  // v30/E2: Defensiv falls Zuteilung auf depubliziertes/gelöschtes Projekt zeigt.
+  if (!projekt) {
+    return html`
+      <div class="card">
+        <h2>Hallo ${schueler.vorname}! 👋</h2>
+        <div class="alert alert-warning">
+          Deine Zuteilung lässt sich gerade nicht laden. Bitte sag deinem Klassenlehrer Bescheid.
+        </div>
+        <button class="btn btn-primary btn-full" onClick=${onClose}>Zur Startseite</button>
+      </div>
+    `;
+  }
+
   return html`
     <div class="card">
       <h2>Hallo ${schueler.vorname}! 👋</h2>
@@ -1293,12 +1327,25 @@ function TauschwunschFormular({ service, schueler, projekte, onFertig, onBack })
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
 
-  const aktuelles = projekte.find(p => p.id === schueler.status.zuteilung.projekt_id);
+  const aktuelles = projekte.find(p => p.id === schueler.status.zuteilung?.projekt_id);
   const verfuegbar = projekte.filter(p =>
     aktuelles && p.id !== aktuelles.id &&
     schueler.klassenstufe >= p.min_klasse &&
     schueler.klassenstufe <= p.max_klasse
   );
+
+  // v30/E2: Defensiv falls aktuelle Zuteilung nicht in der Projekt-Liste ist.
+  if (!aktuelles) {
+    return html`
+      <div class="card">
+        <h2>🔄 Tauschwunsch stellen</h2>
+        <div class="alert alert-warning">
+          Deine aktuelle Zuteilung lässt sich gerade nicht laden. Bitte sag deinem Klassenlehrer Bescheid.
+        </div>
+        <button class="btn btn-ghost btn-full" onClick=${onBack}>← Zurück</button>
+      </div>
+    `;
+  }
 
   const absenden = async () => {
     if (!nachProjekt) { setError('Bitte wähle ein Ziel-Projekt aus.'); return; }
