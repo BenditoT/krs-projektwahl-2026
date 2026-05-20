@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="robots" content="noindex, nofollow">
-  <title>KRS Projektwahl 2026</title>
+  <title>Projektwoche-Anmeldung</title>
+  <script src="tenant.js"></script>
   <style>
     :root {
       --krs-blau: #4A6A83;
@@ -84,11 +85,11 @@
 <body>
   <div class="wrap">
     <div class="logo-strip"><span class="b"></span><span class="o"></span><span class="g"></span></div>
-    <img src="krs-logo.jpg" alt="KRS · Kurpfalz-Realschule Schriesheim"
+    <img data-tenant="logo" src="krs-logo.jpg" alt="Schul-Logo"
          style="display:block; margin: 24px auto 8px; max-width: 280px; width: 70%; height: auto;"
          onerror="this.style.display='none';">
-    <h1>KRS Projektwahl 2026</h1>
-    <p class="subtitle">Kurpfalz-Realschule Schriesheim · Projekttage 21.–23. Juli 2026</p>
+    <h1 data-tenant="h1">Projektwoche</h1>
+    <p class="subtitle" data-tenant="subtitle">Projekttage</p>
 
     <div class="banner">
       <strong>Live-Betrieb:</strong> Die Anwendung läuft produktiv mit echter Datenbank.
@@ -123,14 +124,31 @@
         <span class="tag gelb">Vorlage</span>
       </div>
       <div class="card-desc">
-        Serienbrief-Vorlage mit KRS-Branding, QR-Code und Anmelde-Code.
+        Serienbrief-Vorlage mit Schul-Branding, QR-Code und Anmelde-Code.
       </div>
     </a>
 
     <footer>
-      Stand: April 2026 · Kurpfalz-Realschule Schriesheim<br>
-      Kontakt: <a href="mailto:kotzan@realschule-schriesheim.de">Norbert Kotzan</a>
+      <span data-tenant="footer-stand">Stand: April 2026</span> · <span data-tenant="footer-schule">Schule</span><br>
+      Kontakt: <a data-tenant="footer-kontakt" href="#">Verantwortlich</a>
     </footer>
   </div>
+  <script>
+  (function () {
+    const T = window.TENANT;
+    const H = window.TENANT_HELPERS || {};
+    if (!T) return;
+    document.title = `${T.schule.name_kurz || 'Schule'} Projektwoche ${T.termine.projektwoche_jahr || ''}`.trim();
+    const set = (sel, fn) => { const el = document.querySelector(sel); if (el) fn(el); };
+    set('[data-tenant="logo"]',     el => { el.src = T.branding.logo_url || el.src; el.alt = `${T.schule.name_kurz || 'Schule'} · ${T.schule.name_lang || ''}`; });
+    set('[data-tenant="h1"]',       el => el.textContent = `${T.schule.name_kurz || 'Schule'} Projektwoche ${T.termine.projektwoche_jahr || ''}`.trim());
+    set('[data-tenant="subtitle"]', el => el.textContent = `${T.schule.name_lang || ''} · Projekttage ${(H.terminBereich && H.terminBereich()) || ''}`.replace(/^ · /, '').replace(/ ·  $/, ''));
+    set('[data-tenant="footer-schule"]', el => el.textContent = T.schule.name_lang || 'Schule');
+    set('[data-tenant="footer-kontakt"]', el => {
+      el.href = 'mailto:' + (T.kontakt.verantwortlich_email || '');
+      el.textContent = T.kontakt.verantwortlich_name || T.kontakt.verantwortlich_email || 'Kontakt';
+    });
+  })();
+  </script>
 </body>
 </html>
