@@ -68,8 +68,8 @@ test.describe('Feature: Modal-Validierung', () => {
     await page.waitForTimeout(150);
 
     // Min Teilnehmer auf 20, Max Plätze auf 5 → Fehler
-    const minInput = page.locator('.modal-content input[type="number"]').nth(0);
-    const maxInput = page.locator('.modal-content input[type="number"]').nth(1);
+    const minInput = page.locator('[data-testid="projekt-min-teilnehmer-control"] input[type="number"]');
+    const maxInput = page.locator('[data-testid="projekt-max-plaetze-control"] input[type="number"]');
     await minInput.fill('20');
     await page.waitForTimeout(150);
     await maxInput.fill('5');

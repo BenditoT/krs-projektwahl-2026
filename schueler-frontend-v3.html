@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-<title>KRS Projekttage 2026</title>
+<title>Projekttage</title>
 <meta name="theme-color" content="#4A6A83">
 <style>
 :root {
@@ -152,18 +152,10 @@ footer a:hover{text-decoration:underline}
 .mode-badge.demo{background:var(--krs-orange);color:white}
 .mode-badge.produktiv{background:var(--success);color:white;opacity:0.85}
 </style>
-<!-- === KRS Supabase Integration (inline — keine externen .js-Dateien nötig) === -->
+<!-- === Tenant-Konfiguration (Schul-spezifische Werte) — MUSS vor allen anderen Scripts geladen werden === -->
+<script src="tenant.js"></script>
+<!-- === Supabase Integration (inline — keine externen .js-Dateien nötig) === -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-// ===== krs-supabase-config.js (inline) =====
-// Öffentlicher Schlüssel — darf im Frontend liegen. Schutz via RLS in Supabase.
-window.KRS_SUPABASE = {
-  url: 'https://uzynvvtsyjfmtywsfxtz.supabase.co',
-  publishableKey: 'sb_publishable_kdZSmagc_sbq9qwynebcxw_hKdhyDt1',
-  // Frontend-URL für Schüler-App (wird z.B. in Serienbriefen referenziert)
-  schueler_url: 'https://benditot.github.io/krs-projektwahl-2026/schueler.html'
-};
-</script>
 <script>
 // ===== krs-supabase-service.js (inline) =====
 // DataService (Dual-Mode: Demo + Produktiv) für KRS Projektwahl 2026.
@@ -182,13 +174,30 @@ window.KRS_SUPABASE = {
     !!(CFG.publishableKey || CFG.anonKey) &&
     typeof window.supabase !== 'undefined';
 
+  function joinLehrerNames(row) {
+    const names = [];
+    const first =
+      row.lehrer_name ||
+      row.lehrer1_name ||
+      (row.lehrer && typeof row.lehrer === 'object' ? row.lehrer.name : row.lehrer);
+    const second =
+      row.lehrer2_name ||
+      row.zweitlehrer_name ||
+      (row.lehrer2 && typeof row.lehrer2 === 'object' ? row.lehrer2.name : row.lehrer2);
+    [first, second].forEach(name => {
+      const clean = String(name || '').trim();
+      if (clean && !names.includes(clean)) names.push(clean);
+    });
+    return names.join(', ');
+  }
+
   function normalizeProjektPublic(row) {
     return {
       id: row.id,
       titel: row.titel,
       beschreibung: row.kurzbeschreibung || row.beschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer_name || row.lehrer || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -202,7 +211,7 @@ window.KRS_SUPABASE = {
       titel: row.titel,
       beschreibung: row.beschreibung || row.kurzbeschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer || row.lehrer_name || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -444,8 +453,17 @@ window.KRS_SUPABASE = {
         const src = window.MOCK_PROJEKTE || [];
         return src.map(normalizeMockProjekt);
       }
-      const { data, error } = await this.client
-        .from('projekte').select('*, lehrer:users!lehrer_id(name, kuerzel)').order('titel');
+      let { data, error } = await this.client
+        .from('projekte')
+        .select('*, lehrer:users!lehrer_id(name, kuerzel), lehrer2:users!lehrer2_id(name, kuerzel)')
+        .order('titel');
+      if (error && /lehrer2_id|lehrer2|relationship|schema cache/i.test(error.message || '')) {
+        console.warn('[KRS] listProjekte: lehrer2_id fehlt noch, Fallback auf Ein-Lehrer-Schema.');
+        ({ data, error } = await this.client
+          .from('projekte')
+          .select('*, lehrer:users!lehrer_id(name, kuerzel)')
+          .order('titel'));
+      }
       if (error) throw new Error('listProjekte: ' + error.message);
       return data || [];
     }
@@ -669,7 +687,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v30';
+  window.KRS_VERSION = 'v33';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '— Version:', window.KRS_VERSION);
 })();
 </script>
@@ -688,13 +706,13 @@ const LOGO_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1B
 // === MOCK-DATEN ===
 const MOCK_PROJEKTE = [
   { id: 'p1', titel: 'Fotografie & Bildbearbeitung', lehrer: 'Hr. Müller', ort: 'Computerraum 1',
-    beschreibung: 'Mit der Kamera Schule und Schriesheim entdecken. Bilder bearbeiten, eigenes Portfolio erstellen.',
+    beschreibung: 'Mit der Kamera Schule und Stadt entdecken. Bilder bearbeiten, eigenes Portfolio erstellen.',
     min_klasse: 7, max_klasse: 9, freie_plaetze: 0 },
   { id: 'p2', titel: 'Theater-Werkstatt', lehrer: 'Fr. Schmitt', ort: 'Aula',
     beschreibung: 'Wir entwickeln gemeinsam ein kleines Theaterstück und führen es beim Schulfest auf.',
     min_klasse: 5, max_klasse: 9, freie_plaetze: 3 },
   { id: 'p3', titel: 'Weinberg-AG intensiv', lehrer: 'Fr. Scharmann', ort: 'Schulweinberg',
-    beschreibung: 'Arbeit im Schulweinberg, Weinkunde, Geschichte des Weinbaus in Schriesheim.',
+    beschreibung: 'Arbeit im Schulweinberg, Weinkunde, Geschichte des regionalen Weinbaus.',
     min_klasse: 7, max_klasse: 9, freie_plaetze: 5 },
   { id: 'p4', titel: 'Schulband Vertiefung', lehrer: 'Hr. Kotzan', ort: 'Musikraum',
     beschreibung: 'Songs einstudieren, Aufnahmen im Schulstudio, Auftritt beim Schulfest.',
@@ -947,12 +965,12 @@ function App() {
       <div class="phase-indicator">${phaseLabels[phase]}</div>
       <div class="header-content">
         <div class="logo-wrapper">
-          <img src=${LOGO_SRC} alt="KRS" />
+          <img src=${(window.TENANT && window.TENANT.branding && window.TENANT.branding.logo_url) || LOGO_SRC} alt=${(window.TENANT && window.TENANT.schule && window.TENANT.schule.name_kurz) || 'Schule'} onError=${e => { e.target.src = LOGO_SRC; }} />
         </div>
         <div>
-          <div class="event-title">Projekttage 2026</div>
+          <div class="event-title">Projekttage ${(window.TENANT && window.TENANT.termine && window.TENANT.termine.projektwoche_jahr) || ''}</div>
           <div class="event-subtitle">
-            <span class="event-accent">21.–23. Juli</span> · Schulfest 23. Juli
+            <span class="event-accent">${(window.TENANT_HELPERS && window.TENANT_HELPERS.terminBereich && window.TENANT_HELPERS.terminBereich()) || ''}</span>${window.TENANT && window.TENANT.termine && window.TENANT.termine.schulfest ? html` · Schulfest ${window.TENANT_HELPERS.terminTag(window.TENANT.termine.schulfest)}` : ''}
           </div>
         </div>
       </div>
@@ -974,10 +992,9 @@ function App() {
     </div>
     
     <footer>
-      Bei Fragen: <a href="mailto:kotzan@realschule-schriesheim.de">kotzan@realschule-schriesheim.de</a><br/>
-      <a href="https://realschule-schriesheim.de/datenschutzerklaerung/">Datenschutz</a>
-      <span class="divider">·</span>
-      <a href="https://realschule-schriesheim.de/kontakt-service/impressum-3/">Impressum</a>
+      Bei Fragen: <a href=${'mailto:' + ((window.TENANT && window.TENANT.kontakt && window.TENANT.kontakt.verantwortlich_email) || '')}>${(window.TENANT && window.TENANT.kontakt && window.TENANT.kontakt.verantwortlich_email) || ''}</a><br/>
+      ${window.TENANT && window.TENANT.links && window.TENANT.links.datenschutz ? html`<a href=${window.TENANT.links.datenschutz}>Datenschutz</a>` : ''}
+      ${window.TENANT && window.TENANT.links && window.TENANT.links.impressum ? html`<span class="divider">·</span><a href=${window.TENANT.links.impressum}>Impressum</a>` : ''}
     </footer>
   `;
 }
@@ -988,7 +1005,7 @@ function StartScreen({ phase, onStart }) {
     setup: {
       emoji: '📅',
       titel: 'Anmeldung startet bald',
-      text: 'Die Anmeldung für die Projekttage 2026 ist noch nicht geöffnet. Du bekommst rechtzeitig deinen persönlichen Anmelde-Brief mit allen Infos.',
+      text: `Die Anmeldung für die Projekttage ${(window.TENANT && window.TENANT.termine && window.TENANT.termine.projektwoche_jahr) || ''} ist noch nicht geöffnet. Du bekommst rechtzeitig deinen persönlichen Anmelde-Brief mit allen Infos.`,
       btnText: null
     },
     anmeldung: {

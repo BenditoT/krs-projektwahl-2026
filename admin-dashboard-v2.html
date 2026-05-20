@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KRS Admin · Projektwahl 2026</title>
+<title>Schul-Dashboard</title>
 <meta name="theme-color" content="#4A6A83">
 <style>
 :root {
@@ -125,6 +125,12 @@ input[type="text"],input[type="number"],input[type="email"],input[type="file"],s
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau);box-shadow:0 0 0 3px rgba(74,106,131,0.15)}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:600px){.form-row{grid-template-columns:1fr}}
+.number-stepper{display:grid;grid-template-columns:40px minmax(72px,1fr) 40px;gap:6px;align-items:center}
+.number-stepper input[type="number"]{text-align:center;min-width:0;padding-left:6px;padding-right:6px}
+.number-stepper button{height:40px;border:1.5px solid var(--border-strong);background:white;border-radius:var(--radius-sm);font-size:18px;font-weight:700;color:var(--krs-blau);cursor:pointer;transition:all var(--transition)}
+.number-stepper button:hover:not(:disabled){background:var(--krs-blau-light);border-color:var(--krs-blau)}
+.number-stepper button:disabled{color:var(--text-light);background:var(--bg-subtle);cursor:not-allowed}
+.number-hint{display:block;color:var(--text-muted);font-size:12px;margin-top:5px}
 
 /* === MODAL === */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto}
@@ -197,19 +203,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 </style>
 <!-- === KRS Supabase Integration (inline — keine externen .js-Dateien nötig) === -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Tenant-Konfiguration (Schul-spezifische Werte) — vor allen anderen Scripts -->
+<script src="tenant.js"></script>
 <!-- jsPDF + AutoTable für PDF-Export (Klassen-/Teilnehmerlisten) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script>
-// ===== krs-supabase-config.js (inline) =====
-// Öffentlicher Schlüssel — darf im Frontend liegen. Schutz via RLS in Supabase.
-window.KRS_SUPABASE = {
-  url: 'https://uzynvvtsyjfmtywsfxtz.supabase.co',
-  publishableKey: 'sb_publishable_kdZSmagc_sbq9qwynebcxw_hKdhyDt1',
-  // Frontend-URL für Schüler-App (wird z.B. in Serienbriefen referenziert)
-  schueler_url: 'https://benditot.github.io/krs-projektwahl-2026/schueler.html'
-};
-</script>
 <script>
 // ===== krs-supabase-service.js (inline) =====
 // DataService (Dual-Mode: Demo + Produktiv) für KRS Projektwahl 2026.
@@ -228,13 +226,30 @@ window.KRS_SUPABASE = {
     !!(CFG.publishableKey || CFG.anonKey) &&
     typeof window.supabase !== 'undefined';
 
+  function joinLehrerNames(row) {
+    const names = [];
+    const first =
+      row.lehrer_name ||
+      row.lehrer1_name ||
+      (row.lehrer && typeof row.lehrer === 'object' ? row.lehrer.name : row.lehrer);
+    const second =
+      row.lehrer2_name ||
+      row.zweitlehrer_name ||
+      (row.lehrer2 && typeof row.lehrer2 === 'object' ? row.lehrer2.name : row.lehrer2);
+    [first, second].forEach(name => {
+      const clean = String(name || '').trim();
+      if (clean && !names.includes(clean)) names.push(clean);
+    });
+    return names.join(', ');
+  }
+
   function normalizeProjektPublic(row) {
     return {
       id: row.id,
       titel: row.titel,
       beschreibung: row.kurzbeschreibung || row.beschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer_name || row.lehrer || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -248,7 +263,7 @@ window.KRS_SUPABASE = {
       titel: row.titel,
       beschreibung: row.beschreibung || row.kurzbeschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer || row.lehrer_name || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -528,8 +543,17 @@ window.KRS_SUPABASE = {
         const src = window.MOCK_PROJEKTE || [];
         return src.map(normalizeMockProjekt);
       }
-      const { data, error } = await this.client
-        .from('projekte').select('*, lehrer:users!lehrer_id(name, kuerzel)').order('titel');
+      let { data, error } = await this.client
+        .from('projekte')
+        .select('*, lehrer:users!lehrer_id(name, kuerzel), lehrer2:users!lehrer2_id(name, kuerzel)')
+        .order('titel');
+      if (error && /lehrer2_id|lehrer2|relationship|schema cache/i.test(error.message || '')) {
+        console.warn('[KRS] listProjekte: lehrer2_id fehlt noch, Fallback auf Ein-Lehrer-Schema.');
+        ({ data, error } = await this.client
+          .from('projekte')
+          .select('*, lehrer:users!lehrer_id(name, kuerzel)')
+          .order('titel'));
+      }
       if (error) throw new Error('listProjekte: ' + error.message);
       return data || [];
     }
@@ -852,7 +876,7 @@ window.KRS_SUPABASE = {
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v25.1';
+  window.KRS_VERSION = 'v33';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -907,7 +931,7 @@ window.KRS_SUPABASE = {
       </div>
     </form>
 
-    <p style="color:#8B97A2;margin:1rem 0 0;font-size:0.75rem;">Kurpfalz-Realschule Schriesheim</p>
+    <p data-tenant="gate-schule" style="color:#8B97A2;margin:1rem 0 0;font-size:0.75rem;">Schule</p>
   </div>
 </div>
 
@@ -978,14 +1002,18 @@ async function krsLoginDemo() {
 }
 
 function krsForgotPwDemo() {
-  const subject = encodeURIComponent('Passwort vergessen – KRS Projektwahl Admin');
+  const T = window.TENANT || {};
+  const ansprechpartner = (T.kontakt && T.kontakt.verantwortlich_name) || 'Verantwortliche/r';
+  const empfaenger = (T.kontakt && T.kontakt.verantwortlich_email) || '';
+  const schulkurz = (T.schule && T.schule.name_kurz) || 'Schule';
+  const subject = encodeURIComponent('Passwort vergessen – ' + schulkurz + ' Projektwahl Admin');
   const body = encodeURIComponent(
-    'Hallo Norbert,\n\n' +
-    'ich habe das Demo-Passwort für das Admin-Dashboard der KRS Projektwahl vergessen.\n' +
+    'Hallo ' + ansprechpartner + ',\n\n' +
+    'ich habe das Demo-Passwort für das Admin-Dashboard der ' + schulkurz + ' Projektwahl vergessen.\n' +
     'Bitte schicke mir ein neues zu.\n\n' +
     'Absender: \nSchule/Funktion: \n\nDanke!'
   );
-  window.location.href = 'mailto:kotzan@realschule-schriesheim.de?subject=' + subject + '&body=' + body;
+  window.location.href = 'mailto:' + empfaenger + '?subject=' + subject + '&body=' + body;
 }
 
 // =============== LIVE-MODUS ===============
@@ -1465,7 +1493,7 @@ const LOGO_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1B
 
 const MOCK_LEHRER = [
   {
-    "id": "u1",
+    "id": "d2ee5175-7d6c-5976-98f9-d49cd1c97ece",
     "name": "Franziska Amler",
     "vorname": "Franziska",
     "nachname": "Amler",
@@ -1475,17 +1503,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u2",
+    "id": "8c9a7a2a-d4dd-58e3-931a-f3d3bde6169d",
     "name": "Tanja Appel",
     "vorname": "Tanja",
     "nachname": "Appel",
     "kuerzel": "APP",
     "email": "appel@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
+    "rolle": "klassenlehrer",
+    "klassenlehrer_von": "7a"
   },
   {
-    "id": "u3",
+    "id": "c7b66f38-7951-566b-a3a8-4a7d5c8092af",
     "name": "Aline Bartschat",
     "vorname": "Aline",
     "nachname": "Bartschat",
@@ -1495,7 +1523,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u4",
+    "id": "c2a6187a-c672-52d6-a4b1-54cb5412a57b",
+    "name": "Boris Borkowski",
+    "vorname": "Boris",
+    "nachname": "Borkowski",
+    "kuerzel": "BOR",
+    "email": "borkowski@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "330a87bf-e007-5d15-b662-e71cf62a3562",
     "name": "Cardy Bückmann",
     "vorname": "Cardy",
     "nachname": "Bückmann",
@@ -1505,7 +1543,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u5",
+    "id": "8c58903c-5ac6-5e73-9266-6d8afa391a5e",
     "name": "Ralph Burggraf",
     "vorname": "Ralph",
     "nachname": "Burggraf",
@@ -1515,7 +1553,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u6",
+    "id": "c513d467-183b-57d2-a389-b23a28af2faa",
     "name": "Kai Aljoscha Burghardt",
     "vorname": "Kai Aljoscha",
     "nachname": "Burghardt",
@@ -1525,7 +1563,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u7",
+    "id": "acb47837-9762-5bb0-aba5-0b017511cf1c",
     "name": "Petra Carse",
     "vorname": "Petra",
     "nachname": "Carse",
@@ -1535,7 +1573,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u8",
+    "id": "c9925638-302d-5bc1-aa33-db48b4fcb1c6",
     "name": "Antonia Eberhardt",
     "vorname": "Antonia",
     "nachname": "Eberhardt",
@@ -1545,7 +1583,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u9",
+    "id": "da8a3669-b741-52c2-bfb1-616043c88f7e",
     "name": "Miriam Englert",
     "vorname": "Miriam",
     "nachname": "Englert",
@@ -1555,17 +1593,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u10",
-    "name": "Rainer Hauke",
-    "vorname": "Rainer",
-    "nachname": "Hauke",
-    "kuerzel": "HAU",
-    "email": "hauke@realschule-schriesheim.de",
+    "id": "4b300df0-6634-594e-9836-94ace8130c66",
+    "name": "Kristina Hahn",
+    "vorname": "Kristina",
+    "nachname": "Hahn",
+    "kuerzel": "HAH",
+    "email": "hahn@realschule-schriesheim.de",
     "rolle": "projektlehrer",
     "klassenlehrer_von": null
   },
   {
-    "id": "u11",
+    "id": "9ef1ce3f-5aa8-57ba-8c25-17ba1b59d8f7",
     "name": "Simone Hörburger",
     "vorname": "Simone",
     "nachname": "Hörburger",
@@ -1575,7 +1613,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u12",
+    "id": "042abff4-d37c-56bd-965a-44c11be6edeb",
     "name": "Laure Charlotte Jacob",
     "vorname": "Laure Charlotte",
     "nachname": "Jacob",
@@ -1585,7 +1623,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u13",
+    "id": "1c8e87c0-257b-5de0-b7aa-14154e1fc39b",
     "name": "Corinna Jendritzki",
     "vorname": "Corinna",
     "nachname": "Jendritzki",
@@ -1595,27 +1633,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u14",
-    "name": "Ute Johnscher",
-    "vorname": "Ute",
-    "nachname": "Johnscher",
-    "kuerzel": "JOH",
-    "email": "johnscher@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
-  },
-  {
-    "id": "u15",
+    "id": "71be6bd3-d193-5d06-8c07-60b1fee798df",
     "name": "Nadine Jooß",
     "vorname": "Nadine",
     "nachname": "Jooß",
     "kuerzel": "JOO",
     "email": "jooss@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
+    "rolle": "projektleitung",
     "klassenlehrer_von": null
   },
   {
-    "id": "u16",
+    "id": "02b32b7e-7901-558a-9bc1-9709c9ade834",
     "name": "Stephan Kasper",
     "vorname": "Stephan",
     "nachname": "Kasper",
@@ -1625,7 +1653,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u17",
+    "id": "02b33309-c680-5adb-93a6-3a71aaeabeeb",
     "name": "Vanessa Anna-Sofie Keilbach",
     "vorname": "Vanessa Anna-Sofie",
     "nachname": "Keilbach",
@@ -1635,7 +1663,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u18",
+    "id": "13ed7c9f-54e5-5c6c-8bb0-242ec40fba18",
     "name": "Werner Keller",
     "vorname": "Werner",
     "nachname": "Keller",
@@ -1645,7 +1673,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u19",
+    "id": "da028e48-4996-5a25-9809-5f2375db4a2e",
+    "name": "Nina Kleemann",
+    "vorname": "Nina",
+    "nachname": "Kleemann",
+    "kuerzel": "KLE",
+    "email": "kleemann@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "9d0e88fe-19a9-593f-a0f2-33a8c0c6197c",
     "name": "Karsten Klumpp",
     "vorname": "Karsten",
     "nachname": "Klumpp",
@@ -1655,7 +1693,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u20",
+    "id": "a6e32a09-0a11-552e-99cf-0b6d36d0d1b9",
     "name": "Patrick Kocher",
     "vorname": "Patrick",
     "nachname": "Kocher",
@@ -1665,7 +1703,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u21",
+    "id": "85ad8c98-e6ef-51da-95bc-a165e3518839",
     "name": "Steffen Kögel",
     "vorname": "Steffen",
     "nachname": "Kögel",
@@ -1675,7 +1713,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u22",
+    "id": "952bc971-14d9-5ae3-b0cd-511f37847295",
     "name": "Norbert Kotzan",
     "vorname": "Norbert",
     "nachname": "Kotzan",
@@ -1685,17 +1723,27 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u23",
+    "id": "bc1a3ded-2ac1-5dbf-a53e-ff84601b011b",
     "name": "Rouven Langensiepe",
     "vorname": "Rouven",
     "nachname": "Langensiepe",
     "kuerzel": "LAN",
     "email": "langensiepe@realschule-schriesheim.de",
-    "rolle": "klassenlehrer",
-    "klassenlehrer_von": "7a"
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
   },
   {
-    "id": "u24",
+    "id": "fc618d0c-6368-5370-9d86-2e617acf91f2",
+    "name": "Christin Andrea Lutze",
+    "vorname": "Christin Andrea",
+    "nachname": "Lutze",
+    "kuerzel": "LUT",
+    "email": "lutze@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "ed8a18f0-022c-57b2-8daa-7df237147927",
     "name": "Monja Meffert",
     "vorname": "Monja",
     "nachname": "Meffert",
@@ -1705,7 +1753,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u25",
+    "id": "4c5b1d14-6df0-54a5-9b51-42931316fb76",
     "name": "Regina Meister",
     "vorname": "Regina",
     "nachname": "Meister",
@@ -1715,7 +1763,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u26",
+    "id": "9d1dfd7b-be97-57d8-9110-4297b9808ad9",
     "name": "Franziska Mersi",
     "vorname": "Franziska",
     "nachname": "Mersi",
@@ -1725,7 +1773,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u27",
+    "id": "20ecd4e2-08a1-57ea-a683-5775f8ddf1e7",
+    "name": "Manuel Mier Martinez",
+    "vorname": "Manuel",
+    "nachname": "Mier Martinez",
+    "kuerzel": "MIE",
+    "email": "mier.martinez@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "2ed87b7f-8759-572f-92eb-e9c111ab66e6",
     "name": "Sebastian Müller",
     "vorname": "Sebastian",
     "nachname": "Müller",
@@ -1735,7 +1793,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u28",
+    "id": "867191fa-23be-5b18-a3ad-7bd6a1ca42ab",
     "name": "Caroline Ningelgen",
     "vorname": "Caroline",
     "nachname": "Ningelgen",
@@ -1745,17 +1803,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u29",
-    "name": "Kim Pätzold",
-    "vorname": "Kim",
-    "nachname": "Pätzold",
-    "kuerzel": "PAE",
-    "email": "paetzold@realschule-schriesheim.de",
+    "id": "456eba15-8478-5442-94f0-0e7d53ea220c",
+    "name": "Mara Rudolph",
+    "vorname": "Mara",
+    "nachname": "Rudolph",
+    "kuerzel": "RUD",
+    "email": "rudolph@realschule-schriesheim.de",
     "rolle": "projektlehrer",
     "klassenlehrer_von": null
   },
   {
-    "id": "u30",
+    "id": "bbe0cbce-ff50-5f9e-ae32-39ed20ae1076",
     "name": "Magnus Sardy",
     "vorname": "Magnus",
     "nachname": "Sardy",
@@ -1765,7 +1823,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u31",
+    "id": "b6877a65-b2e4-5b9d-94b0-e8c3a2b4b284",
     "name": "Katharina Scharmann",
     "vorname": "Katharina",
     "nachname": "Scharmann",
@@ -1775,7 +1833,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u32",
+    "id": "e5480fac-59ba-577d-94a4-e574bd200865",
     "name": "Daniel Schmitt",
     "vorname": "Daniel",
     "nachname": "Schmitt",
@@ -1785,17 +1843,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u33",
+    "id": "b8e829ef-355a-599f-a856-8d115334e23b",
     "name": "Peter Schmitt",
     "vorname": "Peter",
     "nachname": "Schmitt",
     "kuerzel": "SCM",
-    "email": "schmitt@realschule-schriesheim.de",
+    "email": "schmitt.peter@realschule-schriesheim.de",
     "rolle": "projektlehrer",
     "klassenlehrer_von": null
   },
   {
-    "id": "u34",
+    "id": "2d4c25e2-6be8-5d66-88e1-2065c8465df4",
     "name": "Bianca Christine Schmolz",
     "vorname": "Bianca Christine",
     "nachname": "Schmolz",
@@ -1805,7 +1863,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u35",
+    "id": "76828ffb-9ce0-5f18-9cae-fb01217ebc87",
     "name": "Monika Schrödl",
     "vorname": "Monika",
     "nachname": "Schrödl",
@@ -1815,7 +1873,17 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u36",
+    "id": "496044a1-1b02-5a80-8c10-b05a79f41792",
+    "name": "Leonie Schurr",
+    "vorname": "Leonie",
+    "nachname": "Schurr",
+    "kuerzel": "SCHU",
+    "email": "schurr@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "20b7eb8e-9263-53a2-8cbd-0f0aa3cce4b1",
     "name": "Silke Spingel",
     "vorname": "Silke",
     "nachname": "Spingel",
@@ -1825,17 +1893,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u37",
-    "name": "Kai Stubenvoll",
-    "vorname": "Kai",
-    "nachname": "Stubenvoll",
-    "kuerzel": "STU",
-    "email": "stubenvoll@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
-  },
-  {
-    "id": "u38",
+    "id": "a3d3e676-e56f-52a4-ac35-f32204105fc7",
     "name": "Eva Teich",
     "vorname": "Eva",
     "nachname": "Teich",
@@ -1845,17 +1903,27 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u39",
-    "name": "Anne Weihrauch",
-    "vorname": "Anne",
-    "nachname": "Weihrauch",
+    "id": "aee19f23-20da-5047-9a66-4adfe5fea9d4",
+    "name": "Johannes Weilguni",
+    "vorname": "Johannes",
+    "nachname": "Weilguni",
     "kuerzel": "WEI",
-    "email": "weihrauch@realschule-schriesheim.de",
+    "email": "weilguni@realschule-schriesheim.de",
     "rolle": "projektlehrer",
     "klassenlehrer_von": null
   },
   {
-    "id": "u40",
+    "id": "e99d4577-d960-59cd-b409-9856799f7839",
+    "name": "Fabienne Weinmann",
+    "vorname": "Fabienne",
+    "nachname": "Weinmann",
+    "kuerzel": "WEIN",
+    "email": "weinmann@realschule-schriesheim.de",
+    "rolle": "projektlehrer",
+    "klassenlehrer_von": null
+  },
+  {
+    "id": "e3148ffe-2737-557c-b7ff-5ea0f2a70d1b",
     "name": "Martin Wöllhaf",
     "vorname": "Martin",
     "nachname": "Wöllhaf",
@@ -1865,7 +1933,7 @@ const MOCK_LEHRER = [
     "klassenlehrer_von": null
   },
   {
-    "id": "u41",
+    "id": "a1d3382f-0e1c-5963-83bc-c11ac58cf0c6",
     "name": "Eva Zerweck",
     "vorname": "Eva",
     "nachname": "Zerweck",
@@ -1873,44 +1941,24 @@ const MOCK_LEHRER = [
     "email": "zerweck@realschule-schriesheim.de",
     "rolle": "projektlehrer",
     "klassenlehrer_von": null
-  },
-  {
-    "id": "u42",
-    "name": "Julia Weber",
-    "vorname": "Julia",
-    "nachname": "Weber",
-    "kuerzel": "WEB",
-    "email": "weber@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
-  },
-  {
-    "id": "u43",
-    "name": "Denise Gehrig",
-    "vorname": "Denise",
-    "nachname": "Gehrig",
-    "kuerzel": "GEH",
-    "email": "gehrig@realschule-schriesheim.de",
-    "rolle": "projektlehrer",
-    "klassenlehrer_von": null
   }
 ];
 
 const MOCK_PROJEKTE_ADMIN = [
-  { id: 'p1', titel: 'Fotografie & Bildbearbeitung', lehrer_id: 'u3', lehrer: 'Hr. Müller', kurzbeschreibung: 'Kamera-Arbeit und Bildbearbeitung',
-    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 7, max_klasse: 9, status: 'veroeffentlicht',
+  { id: 'p1', titel: 'Fotografie & Bildbearbeitung', lehrer_id: 'd2ee5175-7d6c-5976-98f9-d49cd1c97ece', lehrer2_id: '', lehrer: 'Franziska Amler', kurzbeschreibung: 'Kamera-Arbeit und Bildbearbeitung',
+    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 7, max_klasse: 10, status: 'veroeffentlicht',
     belegt: 12, erstwahl_wuensche: 18, zweitwahl_wuensche: 22, drittwahl_wuensche: 15 },
-  { id: 'p2', titel: 'Theater-Werkstatt', lehrer_id: 'u4', lehrer: 'Fr. Schmitt', kurzbeschreibung: 'Stück entwickeln, beim Schulfest aufführen',
-    max_plaetze: 15, min_teilnehmer: 8, min_klasse: 5, max_klasse: 9, status: 'veroeffentlicht',
+  { id: 'p2', titel: 'Theater-Werkstatt', lehrer_id: 'e5480fac-59ba-577d-94a4-e574bd200865', lehrer2_id: '496044a1-1b02-5a80-8c10-b05a79f41792', lehrer: 'Daniel Schmitt, Leonie Schurr', kurzbeschreibung: 'Stück entwickeln, beim Schulfest aufführen',
+    max_plaetze: 24, min_teilnehmer: 8, min_klasse: 5, max_klasse: 10, status: 'veroeffentlicht',
     belegt: 12, erstwahl_wuensche: 12, zweitwahl_wuensche: 14, drittwahl_wuensche: 8 },
-  { id: 'p3', titel: 'Weinberg-AG intensiv', lehrer_id: 'u5', lehrer: 'Fr. Scharmann', kurzbeschreibung: 'Arbeit im Weinberg',
-    max_plaetze: 10, min_teilnehmer: 5, min_klasse: 7, max_klasse: 9, status: 'veroeffentlicht',
+  { id: 'p3', titel: 'Weinberg-AG intensiv', lehrer_id: 'b6877a65-b2e4-5b9d-94b0-e8c3a2b4b284', lehrer2_id: '', lehrer: 'Katharina Scharmann', kurzbeschreibung: 'Arbeit im Weinberg',
+    max_plaetze: 12, min_teilnehmer: 5, min_klasse: 7, max_klasse: 10, status: 'veroeffentlicht',
     belegt: 5, erstwahl_wuensche: 4, zweitwahl_wuensche: 3, drittwahl_wuensche: 5 },
-  { id: 'p4', titel: 'Schulband Vertiefung', lehrer_id: 'u1', lehrer: 'Hr. Kotzan', kurzbeschreibung: 'Songs einstudieren, Auftritt am Schulfest',
-    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 6, max_klasse: 9, status: 'veroeffentlicht',
+  { id: 'p4', titel: 'Schulband Vertiefung', lehrer_id: '952bc971-14d9-5ae3-b0cd-511f37847295', lehrer2_id: '', lehrer: 'Norbert Kotzan', kurzbeschreibung: 'Songs einstudieren, Auftritt am Schulfest',
+    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 6, max_klasse: 10, status: 'veroeffentlicht',
     belegt: 12, erstwahl_wuensche: 28, zweitwahl_wuensche: 12, drittwahl_wuensche: 6 },
-  { id: 'p5', titel: 'Robotik & Programmieren', lehrer_id: 'u3', lehrer: 'Hr. Müller', kurzbeschreibung: 'LEGO Mindstorms',
-    max_plaetze: 12, min_teilnehmer: 6, min_klasse: 5, max_klasse: 8, status: 'veroeffentlicht',
+  { id: 'p5', titel: 'Robotik & Programmieren', lehrer_id: '2ed87b7f-8759-572f-92eb-e9c111ab66e6', lehrer2_id: '20ecd4e2-08a1-57ea-a683-5775f8ddf1e7', lehrer: 'Sebastian Müller, Manuel Mier Martinez', kurzbeschreibung: 'LEGO Mindstorms',
+    max_plaetze: 24, min_teilnehmer: 6, min_klasse: 5, max_klasse: 8, status: 'veroeffentlicht',
     belegt: 10, erstwahl_wuensche: 8, zweitwahl_wuensche: 11, drittwahl_wuensche: 9 },
 ];
 
@@ -1937,11 +1985,11 @@ const MOCK_TAUSCHWUENSCHE = [
 ];
 
 const MOCK_STATS = {
-  "anzahl_schueler_gesamt": 480,
-  "anzahl_projekte": 0,
-  "anzahl_lehrer": 43,
+  "anzahl_schueler_gesamt": 493,
+  "anzahl_projekte": 5,
+  "anzahl_lehrer": 45,
   "angemeldet": 0,
-  "noch_nicht_angemeldet": 480,
+  "noch_nicht_angemeldet": 493,
   "verteilt_erstwahl": 0,
   "verteilt_zweitwahl": 0,
   "verteilt_drittwahl": 0,
@@ -1951,8 +1999,8 @@ const MOCK_STATS = {
 // Globale Mock-Daten (können sich durch User-Aktionen ändern)
 let mockSchueler = [
   {
-    "code": "6B-TPBK",
-    "vorname": "Mohammed",
+    "code": "6B-6WNB",
+    "vorname": "Mohammed Zana Abdulsamad",
     "nachname": "Abdulsamad",
     "klasse": "6b",
     "klassenstufe": 6,
@@ -2185,10 +2233,10 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "9A-795Q",
+    "code": "9D-XNUP",
     "vorname": "Mia",
     "nachname": "Avdimetaj",
-    "klasse": "9a",
+    "klasse": "9d",
     "klassenstufe": 9,
     "hat_gewaehlt": false,
     "zuteilung": null
@@ -2206,6 +2254,15 @@ let mockSchueler = [
     "code": "7B-SGZ4",
     "vorname": "Leopold Michael",
     "nachname": "Bähr",
+    "klasse": "7b",
+    "klassenstufe": 7,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "7B-83CA",
+    "vorname": "Gabriel",
+    "nachname": "Bakar",
     "klasse": "7b",
     "klassenstufe": 7,
     "hat_gewaehlt": false,
@@ -2275,8 +2332,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5C-D8AT",
-    "vorname": "Lukas",
+    "code": "5C-7KRY",
+    "vorname": "Lukas Sebastian",
     "nachname": "Batke",
     "klasse": "5c",
     "klassenstufe": 5,
@@ -2284,8 +2341,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5A-28UK",
-    "vorname": "Charlotte",
+    "code": "5A-T2WS",
+    "vorname": "Charlotte Madita Fee",
     "nachname": "Bauer",
     "klasse": "5a",
     "klassenstufe": 5,
@@ -2356,15 +2413,6 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "8A-4PST",
-    "vorname": "Selina",
-    "nachname": "Behrens",
-    "klasse": "8a",
-    "klassenstufe": 8,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
     "code": "6C-MYE5",
     "vorname": "Finn Louis",
     "nachname": "Behringer",
@@ -2410,11 +2458,29 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "6C-VVN4",
-    "vorname": "Anna Magdalena Zoë",
+    "code": "5B-PZC2",
+    "vorname": "David-Zoltan",
+    "nachname": "Bereczki",
+    "klasse": "5b",
+    "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "6C-DMJZ",
+    "vorname": "Anna Magdalena Zoe",
     "nachname": "Berger",
     "klasse": "6c",
     "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "8A-VYCJ",
+    "vorname": "Sara",
+    "nachname": "Berisha",
+    "klasse": "8a",
+    "klassenstufe": 8,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -2482,8 +2548,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5B-3F8J",
-    "vorname": "Dariyan",
+    "code": "5B-DQN3",
+    "vorname": "Dariyan Dylan",
     "nachname": "Bletsch",
     "klasse": "5b",
     "klassenstufe": 5,
@@ -2545,8 +2611,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5A-953D",
-    "vorname": "Nadia",
+    "code": "5A-MH6M",
+    "vorname": "Nadia Marcelina",
     "nachname": "Bogucka-Dabek",
     "klasse": "5a",
     "klassenstufe": 5,
@@ -2653,20 +2719,20 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "5A-XZ3M",
+    "vorname": "Luis",
+    "nachname": "Bugri",
+    "klasse": "5a",
+    "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "8D-WG9B",
     "vorname": "Mikita",
     "nachname": "Buhai",
     "klasse": "8d",
     "klassenstufe": 8,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
-    "code": "5A-LV7L",
-    "vorname": "Luis",
-    "nachname": "Burgi",
-    "klasse": "5a",
-    "klassenstufe": 5,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -2734,15 +2800,6 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "VKL-9D2N",
-    "vorname": "Tanisha",
-    "nachname": "Chhabra",
-    "klasse": "VKL",
-    "klassenstufe": null,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
     "code": "8C-QMMZ",
     "vorname": "Sebastian Michael Friedrich",
     "nachname": "Chmelik",
@@ -2766,6 +2823,15 @@ let mockSchueler = [
     "nachname": "Cooman",
     "klasse": "8b",
     "klassenstufe": 8,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "7A-HQ2R",
+    "vorname": "Matteo Davide",
+    "nachname": "Cottone",
+    "klasse": "7a",
+    "klassenstufe": 7,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -2815,8 +2881,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5C-JE2G",
-    "vorname": "Josephine",
+    "code": "5C-XLR7",
+    "vorname": "Josephine Helga Sabine",
     "nachname": "Dähmel",
     "klasse": "5c",
     "klassenstufe": 5,
@@ -2968,8 +3034,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "8D-8RSQ",
-    "vorname": "Milijam",
+    "code": "8D-M9DJ",
+    "vorname": "Milijam Vasilios",
     "nachname": "Drljic",
     "klasse": "8d",
     "klassenstufe": 8,
@@ -3103,6 +3169,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "7B-EX7P",
+    "vorname": "Henri",
+    "nachname": "Englert",
+    "klasse": "7b",
+    "klassenstufe": 7,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "8B-EW48",
     "vorname": "Parham",
     "nachname": "Eskandari",
@@ -3175,8 +3250,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "6B-P23E",
-    "vorname": "Julius",
+    "code": "6B-NSCP",
+    "vorname": "Julius Emmerie",
     "nachname": "Fröhlich",
     "klasse": "6b",
     "klassenstufe": 6,
@@ -3270,6 +3345,15 @@ let mockSchueler = [
     "nachname": "Gayer",
     "klasse": "8d",
     "klassenstufe": 8,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "7B-ELEY",
+    "vorname": "Emil Heinrich Georg",
+    "nachname": "Gebhard",
+    "klasse": "7b",
+    "klassenstufe": 7,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -3463,15 +3547,6 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "6C-TV3Y",
-    "vorname": "Elena",
-    "nachname": "Haji Akbari",
-    "klasse": "6c",
-    "klassenstufe": 6,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
     "code": "9D-SAN3",
     "vorname": "Emely Carina",
     "nachname": "Hardt",
@@ -3481,8 +3556,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5B-UAN8",
-    "vorname": "Constantin",
+    "code": "5B-2CC6",
+    "vorname": "Constantin Stephan",
     "nachname": "Hartmann",
     "klasse": "5b",
     "klassenstufe": 5,
@@ -3895,15 +3970,6 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "ZUGANG-F2EL",
-    "vorname": "Max",
-    "nachname": "Kalpin",
-    "klasse": "Zugang",
-    "klassenstufe": null,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
     "code": "10C-ETXE",
     "vorname": "Tom Erik",
     "nachname": "Kämmerer",
@@ -4201,6 +4267,24 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "5B-JLCW",
+    "vorname": "Elif Rukiye",
+    "nachname": "Köseoglu",
+    "klasse": "5b",
+    "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "6A-P4RE",
+    "vorname": "Zeynep Sevde",
+    "nachname": "Köseoglu",
+    "klasse": "6a",
+    "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "7D-XHGK",
     "vorname": "Yelyzaveta",
     "nachname": "Kovalenko",
@@ -4354,6 +4438,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "6B-3KEV",
+    "vorname": "Karla-Madita",
+    "nachname": "Lang",
+    "klasse": "6b",
+    "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "5A-YZTN",
     "vorname": "Paul",
     "nachname": "Langer",
@@ -4372,8 +4465,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "8A-D3B6",
-    "vorname": "Paul",
+    "code": "8A-ATTH",
+    "vorname": "Paul Michael",
     "nachname": "Lassak",
     "klasse": "8a",
     "klassenstufe": 8,
@@ -4403,6 +4496,15 @@ let mockSchueler = [
     "vorname": "Mia",
     "nachname": "Lehmann",
     "klasse": "9d",
+    "klassenstufe": 9,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "9B-8335",
+    "vorname": "Kseniia",
+    "nachname": "Litvin",
+    "klasse": "9b",
     "klassenstufe": 9,
     "hat_gewaehlt": false,
     "zuteilung": null
@@ -4444,6 +4546,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "5C-BR9W",
+    "vorname": "Haoyu",
+    "nachname": "Lu",
+    "klasse": "5c",
+    "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "9A-TB8Z",
     "vorname": "Isabel",
     "nachname": "Lukic",
@@ -4462,6 +4573,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "9A-WZTX",
+    "vorname": "Marlene",
+    "nachname": "Lutz",
+    "klasse": "9a",
+    "klassenstufe": 9,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "7D-37W4",
     "vorname": "Samantha Andrea",
     "nachname": "Maaß",
@@ -4476,6 +4596,15 @@ let mockSchueler = [
     "nachname": "Mahamed Jamal",
     "klasse": "5a",
     "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "7D-QT9Z",
+    "vorname": "Berat",
+    "nachname": "Mak",
+    "klasse": "7d",
+    "klassenstufe": 7,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -4696,11 +4825,11 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "9D-E4ZC",
+    "code": "8D-G2DT",
     "vorname": "Prince Julyan",
     "nachname": "Nahrstedt",
-    "klasse": "9d",
-    "klassenstufe": 9,
+    "klasse": "8d",
+    "klassenstufe": 8,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -4710,15 +4839,6 @@ let mockSchueler = [
     "nachname": "Nast",
     "klasse": "5c",
     "klassenstufe": 5,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
-    "code": "ZUGANG-BTGR",
-    "vorname": "Marie",
-    "nachname": "Neff",
-    "klasse": "Zugang",
-    "klassenstufe": null,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -4809,15 +4929,6 @@ let mockSchueler = [
     "nachname": "Onehidebawo",
     "klasse": "8d",
     "klassenstufe": 8,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
-    "code": "ZUGANG 5ER-WCK7",
-    "vorname": "Davut",
-    "nachname": "Örnek",
-    "klasse": "Zugang 5er",
-    "klassenstufe": null,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -5011,6 +5122,24 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "5C-E528",
+    "vorname": "Amilia Michelle",
+    "nachname": "Prudlik",
+    "klasse": "5c",
+    "klassenstufe": 5,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "6C-MBJM",
+    "vorname": "Noah Gabriel Markus",
+    "nachname": "Prudlik",
+    "klasse": "6c",
+    "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "9D-4JTG",
     "vorname": "Jonas",
     "nachname": "Pschowski",
@@ -5074,8 +5203,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5A-2YJU",
-    "vorname": "Emilie",
+    "code": "5A-3BG6",
+    "vorname": "Emilie Ruth",
     "nachname": "Regula",
     "klasse": "5a",
     "klassenstufe": 5,
@@ -5133,6 +5262,24 @@ let mockSchueler = [
     "nachname": "Richert",
     "klasse": "7a",
     "klassenstufe": 7,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "8A-6ND3",
+    "vorname": "Lena-Maya",
+    "nachname": "Richter",
+    "klasse": "8a",
+    "klassenstufe": 8,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "6B-SDPR",
+    "vorname": "Martina Anna",
+    "nachname": "Rizzo",
+    "klasse": "6b",
+    "klassenstufe": 6,
     "hat_gewaehlt": false,
     "zuteilung": null
   },
@@ -5470,15 +5617,6 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "ZUGANG 5ER-MUED",
-    "vorname": "Etienne Rufus Levi",
-    "nachname": "Selig",
-    "klasse": "Zugang 5er",
-    "klassenstufe": null,
-    "hat_gewaehlt": false,
-    "zuteilung": null
-  },
-  {
     "code": "7B-FVLW",
     "vorname": "Aneta",
     "nachname": "Serhiichuk",
@@ -5596,6 +5734,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "8C-PSY2",
+    "vorname": "Dziuga",
+    "nachname": "Stankeviciute",
+    "klasse": "8c",
+    "klassenstufe": 8,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "7A-7XWR",
     "vorname": "Klaus",
     "nachname": "Steinert",
@@ -5645,6 +5792,15 @@ let mockSchueler = [
     "vorname": "Fabian Torben",
     "nachname": "Strauß",
     "klasse": "6b",
+    "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
+    "code": "6C-DN8C",
+    "vorname": "Felix",
+    "nachname": "Strifler",
+    "klasse": "6c",
     "klassenstufe": 6,
     "hat_gewaehlt": false,
     "zuteilung": null
@@ -5875,6 +6031,15 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
+    "code": "6C-Q2PG",
+    "vorname": "Lisa",
+    "nachname": "Uhlig",
+    "klasse": "6c",
+    "klassenstufe": 6,
+    "hat_gewaehlt": false,
+    "zuteilung": null
+  },
+  {
     "code": "5C-W4KU",
     "vorname": "Ben",
     "nachname": "Ullmer",
@@ -5884,8 +6049,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5A-PPUG",
-    "vorname": "Frida",
+    "code": "5A-RT9F",
+    "vorname": "Frida Margarete",
     "nachname": "Ullrich",
     "klasse": "5a",
     "klassenstufe": 5,
@@ -5911,8 +6076,8 @@ let mockSchueler = [
     "zuteilung": null
   },
   {
-    "code": "5B-CN6J",
-    "vorname": "Elias",
+    "code": "5B-CVDJ",
+    "vorname": "Elias Klaus",
     "nachname": "van der Steenhoven",
     "klasse": "5b",
     "klassenstufe": 5,
@@ -6271,7 +6436,6 @@ let mockSchueler = [
     "zuteilung": null
   }
 ];
-
 let mockLehrerData = [...MOCK_LEHRER];
 let mockProjekteData = [...MOCK_PROJEKTE_ADMIN];
 let mockTauschData = [...MOCK_TAUSCHWUENSCHE];
@@ -6301,35 +6465,35 @@ function replaceArray(arr, newData) {
 
 // === Helper: CSV-Parse ===
 function parseCSV(csvText) {
-  const lines = csvText.trim().split('\n');
+  const lines = csvText.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length === 0) return { data: [], hasHeader: false };
+  const delimiter = (lines[0].split(';').length >= lines[0].split(',').length) ? ';' : ',';
 
   // Prüfe erste Zeile auf Header
-  const possibleHeaders = lines[0].toLowerCase().split(',').map(h => h.trim());
-  const headerPatterns = ['klasse', 'vorname', 'nachname', 'name'];
+  const possibleHeaders = lines[0].toLowerCase().split(delimiter).map(h => h.trim());
+  const headerPatterns = ['klasse', 'vorname', 'vornamen', 'nachname', 'familienname', 'name'];
   const hasHeader = possibleHeaders.some(h => headerPatterns.some(p => h.includes(p)));
 
   const startLine = hasHeader ? 1 : 0;
   const data = [];
+  const headerIndex = (names) => {
+    for (const name of names) {
+      const idx = possibleHeaders.findIndex(h => h === name || h.includes(name));
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+  const idxKlasse = hasHeader ? headerIndex(['klasse']) : 0;
+  const idxVorname = hasHeader ? headerIndex(['vorname', 'vornamen']) : 2;
+  const idxNachname = hasHeader ? headerIndex(['nachname', 'familienname', 'name']) : 1;
 
   for (let i = startLine; i < lines.length; i++) {
-    const parts = lines[i].split(',').map(p => p.trim()).filter(p => p);
-    if (parts.length < 3) continue;
+    const parts = lines[i].split(delimiter).map(p => p.trim());
+    if (parts.filter(Boolean).length < 3) continue;
 
-    let klasse, nachname, vorname;
-
-    // Versuche Spalten zu identifizieren
-    if (possibleHeaders.includes('klasse') || (startLine === 1 && i > startLine)) {
-      // Header erkannt: Klasse, Nachname, Vorname
-      klasse = parts[0];
-      nachname = parts[1];
-      vorname = parts[2];
-    } else {
-      // Keine Header: Klasse, Nachname, Vorname
-      klasse = parts[0];
-      nachname = parts[1];
-      vorname = parts[2];
-    }
+    const klasse = parts[idxKlasse] || '';
+    const nachname = parts[idxNachname] || '';
+    const vorname = parts[idxVorname] || '';
 
     data.push({ klasse, nachname, vorname });
   }
@@ -6339,13 +6503,13 @@ function parseCSV(csvText) {
 
 // === Helper: Validierung ===
 function validateKlasse(klasse) {
-  return /^[5-9][a-zA-Z]$/.test(klasse.toLowerCase());
+  return /^(?:[5-9]|10)[a-zA-Z]$/.test(String(klasse || '').toLowerCase());
 }
 
 function generateAnmeldeCode(klasse) {
   // Format: "7B-A7K2" — Klassenstufe + Buchstabe (uppercase) + Hyphen + 4 Zufallszeichen
   // Sicherheit: crypto.getRandomValues() statt Math.random() (kryptographisch sicher)
-  const prefix = klasse.toUpperCase().substring(0, 2); // z.B. "7B"
+  const prefix = klasse.toUpperCase(); // z.B. "7B" oder "10A"
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   const randomBytes = new Uint32Array(4);
   (window.crypto || window.msCrypto).getRandomValues(randomBytes);
@@ -6390,6 +6554,107 @@ function htmlEscape(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function joinLehrerNames(row) {
+  const names = [];
+  const add = (name) => {
+    const clean = String(name || '').trim();
+    if (clean && !names.includes(clean)) names.push(clean);
+  };
+  add(row?.lehrer_name);
+  add(row?.lehrer1_name);
+  add(row?.lehrer && typeof row.lehrer === 'object' ? row.lehrer.name : row?.lehrer);
+  add(row?.lehrer2_name);
+  add(row?.zweitlehrer_name);
+  add(row?.lehrer2 && typeof row.lehrer2 === 'object' ? row.lehrer2.name : row?.lehrer2);
+  return names.join(', ');
+}
+
+const PROJECT_CAPACITY_PER_TEACHER = 12;
+const PROJECT_GRADE_OPTIONS = [5, 6, 7, 8, 9, 10];
+
+function parseIntOr(value, fallback) {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function clampInt(value, min, max) {
+  const n = parseIntOr(value, min);
+  return Math.max(min, Math.min(max, n));
+}
+
+function getProjektTeacherIds(projekt) {
+  return [projekt?.lehrer_id, projekt?.lehrer2_id].filter(Boolean);
+}
+
+function getProjektTeacherCount(projekt) {
+  return Math.max(1, new Set(getProjektTeacherIds(projekt)).size);
+}
+
+function getProjektMaxPlaetzeLimit(projekt) {
+  return getProjektTeacherCount(projekt) * PROJECT_CAPACITY_PER_TEACHER;
+}
+
+function normalizeProjektCapacity(projekt, { expandForSecondTeacher = false } = {}) {
+  const next = { ...projekt };
+  if (next.lehrer2_id && next.lehrer2_id === next.lehrer_id) next.lehrer2_id = '';
+  const teacherCount = getProjektTeacherCount(next);
+  const limit = getProjektMaxPlaetzeLimit(next);
+  let maxPlaetze = parseIntOr(next.max_plaetze, PROJECT_CAPACITY_PER_TEACHER);
+  if (expandForSecondTeacher && teacherCount === 2 && maxPlaetze === PROJECT_CAPACITY_PER_TEACHER) {
+    maxPlaetze = PROJECT_CAPACITY_PER_TEACHER * 2;
+  }
+  next.max_plaetze = clampInt(maxPlaetze, 1, limit);
+  next.min_teilnehmer = clampInt(next.min_teilnehmer, 1, next.max_plaetze);
+  return next;
+}
+
+function isProjektTeacher(projekt, userId) {
+  return !!userId && (projekt?.lehrer_id === userId || projekt?.lehrer2_id === userId);
+}
+
+function getLehrerNameById(id) {
+  const found = (mockLehrerData || []).find(l => l.id === id);
+  return found?.name || '';
+}
+
+function getProjektLehrerNames(projekt) {
+  const names = [];
+  const add = (name) => {
+    const clean = String(name || '').trim();
+    if (clean && !names.includes(clean)) names.push(clean);
+  };
+  add(getLehrerNameById(projekt?.lehrer_id));
+  add(getLehrerNameById(projekt?.lehrer2_id));
+  add(projekt?.lehrer_name);
+  add(projekt?.lehrer2_name);
+  if (names.length === 0) add(projekt?.lehrer);
+  return names;
+}
+
+function renderNumberStepper({ label, value, min = 1, max = 99, onChange, testId, hint }) {
+  const rawValue = value === '' || value === null || value === undefined ? '' : String(value);
+  const numericValue = parseIntOr(value, min);
+  const setValue = (nextValue) => {
+    if (nextValue === '') { onChange(''); return; }
+    onChange(clampInt(nextValue, min, max));
+  };
+  return html`
+    <div class="input-group" data-testid=${testId || null}>
+      <label>${label}</label>
+      <div class="number-stepper">
+        <button type="button" aria-label=${label + ' verringern'} disabled=${numericValue <= min}
+          onClick=${() => setValue(numericValue - 1)}>-</button>
+        <input type="number" inputmode="numeric" min=${min} max=${max} step="1" value=${rawValue}
+          onInput=${e => setValue(e.target.value)}
+          onBlur=${e => { if (e.target.value === '') setValue(min); }} />
+        <button type="button" aria-label=${label + ' erhöhen'} disabled=${numericValue >= max}
+          onClick=${() => setValue(numericValue + 1)}>+</button>
+      </div>
+      ${hint ? html`<small class="number-hint">${hint}</small>` : ''}
+    </div>
+  `;
 }
 
 // === APP ===
@@ -6442,7 +6707,10 @@ function App() {
         id: p.id,
         titel: p.titel,
         lehrer_id: p.lehrer_id,
-        lehrer_name: p.lehrer_name || p.lehrer || '',
+        lehrer2_id: p.lehrer2_id || null,
+        lehrer_name: p.lehrer_name || (p.lehrer && p.lehrer.name) || '',
+        lehrer2_name: p.lehrer2_name || (p.lehrer2 && p.lehrer2.name) || '',
+        lehrer: joinLehrerNames(p),
         ort: p.ort || '',
         kurzbeschreibung: p.kurzbeschreibung || p.beschreibung || '',
         min_teilnehmer: p.min_teilnehmer ?? 0,
@@ -6966,7 +7234,7 @@ function SchuelerView({ refreshKey }) {
             ...row,
             valid: !klasseFehler && !nameFehler && !isDuplicate,
             errors: [
-              klasseFehler ? 'Klasse ungültig (5-9 und a-c)' : '',
+              klasseFehler ? 'Klasse ungültig (5-10 und Buchstabe)' : '',
               nameFehler ? 'Vor- oder Nachname fehlt' : '',
               isDuplicate ? 'Duplikat existiert bereits' : ''
             ].filter(e => e)
@@ -7008,6 +7276,7 @@ function SchuelerView({ refreshKey }) {
           vorname: row.vorname,
           nachname: row.nachname,
           klasse: row.klasse.toLowerCase(),
+          klassenstufe: parseInt(String(row.klasse).match(/^\d+/)?.[0] || '0', 10),
           hat_gewaehlt: false,
           zuteilung: null
         });
@@ -7052,17 +7321,24 @@ function SchuelerView({ refreshKey }) {
     const frontendUrl = (window.KRS_SUPABASE && window.KRS_SUPABASE.schueler_url)
       || 'https://benditot.github.io/krs-projektwahl-2026/schueler.html';
 
+    const T = window.TENANT || {};
+    const TH = window.TENANT_HELPERS || {};
+    const schulNameLang = (T.schule && T.schule.name_lang) || 'Schule';
+    const schulOrt = (T.schule && T.schule.ort) || '';
+    const schulKurz = (T.schule && T.schule.name_kurz) || 'Schule';
+    const projektJahr = (T.termine && T.termine.projektwoche_jahr) || '';
+    const terminBereich = (TH.terminBereich && TH.terminBereich()) || '';
     const briefe = list.map(s => `
       <section class="brief">
         <header class="brief-header">
           <div style="display:flex;align-items:center;gap:10pt;">
-            <img src="${LOGO_SRC}" alt="KRS" style="width:44pt;height:auto;display:block;" />
+            <img src="${(T.branding && T.branding.logo_url) || LOGO_SRC}" alt="${escapeHtml(schulKurz)}" style="width:44pt;height:auto;display:block;" />
             <div class="absender">
-              <strong>Kurpfalz-Realschule Schriesheim</strong><br/>
-              Projektwoche 2026
+              <strong>${escapeHtml(schulNameLang)}</strong><br/>
+              Projektwoche ${escapeHtml(String(projektJahr))}
             </div>
           </div>
-          <div class="datum">Schriesheim, ${heute}</div>
+          <div class="datum">${escapeHtml(schulOrt)}${schulOrt ? ', ' : ''}${heute}</div>
         </header>
         <div class="adresse">
           <strong>${escapeHtml(s.vorname)} ${escapeHtml(s.nachname)}</strong><br/>
@@ -7070,7 +7346,7 @@ function SchuelerView({ refreshKey }) {
         </div>
         <h2>Deine Anmeldung zur Projektwoche</h2>
         <p>Liebe/r ${escapeHtml(s.vorname)},</p>
-        <p>vom <strong>14. bis 18. Juli 2026</strong> findet an unserer Schule die Projektwoche statt.
+        <p>${terminBereich ? 'vom <strong>' + escapeHtml(terminBereich) + '</strong>' : 'in den nächsten Wochen'} findet an unserer Schule die Projektwoche statt.
         Du darfst aus vielen spannenden Projekten auswählen, was dich am meisten interessiert.</p>
         <p>So meldest du dich an:</p>
         <ol>
@@ -7093,7 +7369,7 @@ function SchuelerView({ refreshKey }) {
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<title>Serienbriefe — Projektwoche 2026</title>
+<title>Serienbriefe — Projektwoche ${escapeHtml(String(projektJahr))}</title>
 <style>
   @page { size: A4; margin: 18mm 20mm; }
   * { box-sizing: border-box; }
@@ -7155,7 +7431,7 @@ function SchuelerView({ refreshKey }) {
     <div class="main-header">
       <div>
         <h1 class="main-title">Schüler</h1>
-        <div class="main-subtitle">${mockSchueler.length} Schüler in den Klassen 5-9</div>
+        <div class="main-subtitle">${mockSchueler.length} Schüler in den Klassen 5-10</div>
       </div>
       <div class="btn-group">
         <input type="file" accept=".csv" onChange=${handleCSVUpload} style="display:none" id="csv-input" />
@@ -7336,6 +7612,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
       titel: '',
       kurzbeschreibung: '',
       lehrer_id: '',
+      lehrer2_id: '',
       max_plaetze: 12,
       min_teilnehmer: 6,
       min_klasse: 5,
@@ -7346,7 +7623,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
   };
 
   const openEditModal = (projekt) => {
-    setFormData({...projekt});
+    setFormData({...projekt, lehrer2_id: projekt.lehrer2_id || ''});
     setEditingId(projekt.id);
   };
 
@@ -7356,6 +7633,10 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
   // Closure das stale formData → Maske blieb leer.
   useEffect(() => {
     if (!formData || !editingId) { setModal(null); return; }
+    const lehrerChoices = mockLehrerData.filter(l => l.rolle === 'projektlehrer' || l.rolle === 'super_admin');
+    const teacherCount = getProjektTeacherCount(formData);
+    const maxPlaetzeLimit = getProjektMaxPlaetzeLimit(formData);
+    const currentMaxPlaetze = parseIntOr(formData.max_plaetze, PROJECT_CAPACITY_PER_TEACHER);
     setModal(html`
       <div class="modal-overlay" onClick=${closeModal}>
         <div class="modal-content" onClick=${e => e.stopPropagation()}>
@@ -7371,14 +7652,40 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
           </div>
           <div class="form-row">
             <div class="input-group">
-              <label>Lehrer *</label>
-              <select value=${formData?.lehrer_id || ''} onChange=${e => setFormData({...formData, lehrer_id: e.target.value})}>
+              <label>Lehrer 1 *</label>
+              <select data-testid="projekt-lehrer1-select" value=${formData?.lehrer_id || ''} onChange=${e => {
+                const selected = e.target.value;
+                setFormData(prev => {
+                  const next = { ...(prev || formData), lehrer_id: selected };
+                  if (next.lehrer2_id === next.lehrer_id) next.lehrer2_id = '';
+                  return normalizeProjektCapacity(next);
+                });
+              }}>
                 <option value="">Wählen...</option>
-                ${mockLehrerData.filter(l => l.rolle === 'projektlehrer' || l.rolle === 'super_admin').map(l => html`
+                ${lehrerChoices.map(l => html`
                   <option value=${l.id}>${l.name}</option>
                 `)}
               </select>
             </div>
+            <div class="input-group">
+              <label>Lehrer 2 (optional)</label>
+              <select data-testid="projekt-lehrer2-select" value=${formData?.lehrer2_id || ''} onChange=${e => {
+                const selected = e.target.value;
+                setFormData(prev => {
+                  const base = prev || formData;
+                  const hadSecond = !!base.lehrer2_id;
+                  const next = { ...base, lehrer2_id: selected };
+                  return normalizeProjektCapacity(next, { expandForSecondTeacher: !hadSecond && !!selected });
+                });
+              }}>
+                <option value="">Kein zweiter Lehrer</option>
+                ${lehrerChoices.filter(l => l.id !== formData?.lehrer_id).map(l => html`
+                  <option value=${l.id}>${l.name}</option>
+                `)}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
             <div class="input-group">
               <label>Status</label>
               <select value=${formData?.status || 'entwurf'} onChange=${e => setFormData({...formData, status: e.target.value})}>
@@ -7386,28 +7693,48 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                 <option value="veroeffentlicht">Veröffentlicht</option>
               </select>
             </div>
+            ${renderNumberStepper({
+              label: 'Max. Plätze',
+              value: formData?.max_plaetze,
+              min: 1,
+              max: maxPlaetzeLimit,
+              testId: 'projekt-max-plaetze-control',
+              hint: `${teacherCount} ${teacherCount === 1 ? 'Lehrer' : 'Lehrer'} x ${PROJECT_CAPACITY_PER_TEACHER} Plätze = max. ${maxPlaetzeLimit}`,
+              onChange: value => {
+                setFormData(prev => {
+                  const next = { ...(prev || formData), max_plaetze: value };
+                  return next;
+                });
+              }
+            })}
           </div>
           <div class="form-row">
+            ${renderNumberStepper({
+              label: 'Min. Teilnehmer',
+              value: formData?.min_teilnehmer,
+              min: 1,
+              max: maxPlaetzeLimit,
+              testId: 'projekt-min-teilnehmer-control',
+              onChange: value => setFormData(prev => ({ ...(prev || formData), min_teilnehmer: value }))
+            })}
             <div class="input-group">
-              <label>Min. Teilnehmer</label>
-              <input type="number" value=${formData?.min_teilnehmer || 6} onInput=${e => setFormData({...formData, min_teilnehmer: parseInt(e.target.value)})} />
-            </div>
-            <div class="input-group">
-              <label>Max. Plätze</label>
-              <input type="number" value=${formData?.max_plaetze || 12} onInput=${e => setFormData({...formData, max_plaetze: parseInt(e.target.value)})} />
+              <label>Kapazitätsregel</label>
+              <div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-subtle);font-size:13px;color:var(--text-muted);min-height:40px;">
+                12 Plätze pro Lehrkraft. Mit zwei Lehrkräften sind bis zu 24 Plätze möglich.
+              </div>
             </div>
           </div>
           <div class="form-row">
             <div class="input-group">
               <label>Min. Klassenstufe</label>
               <select value=${formData?.min_klasse || 5} onChange=${e => setFormData({...formData, min_klasse: parseInt(e.target.value)})}>
-                ${[5, 6, 7, 8, 9].map(k => html`<option value=${k}>${k}</option>`)}
+                ${PROJECT_GRADE_OPTIONS.map(k => html`<option value=${k}>${k}</option>`)}
               </select>
             </div>
             <div class="input-group">
               <label>Max. Klassenstufe</label>
               <select value=${formData?.max_klasse || 9} onChange=${e => setFormData({...formData, max_klasse: parseInt(e.target.value)})}>
-                ${[5, 6, 7, 8, 9].map(k => html`<option value=${k}>${k}</option>`)}
+                ${PROJECT_GRADE_OPTIONS.map(k => html`<option value=${k}>${k}</option>`)}
               </select>
             </div>
           </div>
@@ -7497,12 +7824,25 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               }}>Löschen</button>
             `}
             <button class="btn btn-success" onClick=${async () => {
-              if (!formData.titel || !formData.lehrer_id) {
+              const cleanedForm = { ...(formData || {}) };
+              if (cleanedForm.lehrer2_id && cleanedForm.lehrer2_id === cleanedForm.lehrer_id) cleanedForm.lehrer2_id = '';
+              const minTeilnehmer = parseIntOr(cleanedForm.min_teilnehmer, 0);
+              const maxPlaetze = parseIntOr(cleanedForm.max_plaetze, 0);
+              const maxAllowed = getProjektMaxPlaetzeLimit(cleanedForm);
+              if (!cleanedForm.titel || !cleanedForm.lehrer_id) {
                 showToast('Titel und Lehrer sind erforderlich', 'error');
                 return;
               }
-              if (formData.max_plaetze < formData.min_teilnehmer) {
+              if (cleanedForm.lehrer2_id && cleanedForm.lehrer2_id === cleanedForm.lehrer_id) {
+                showToast('Lehrer 1 und Lehrer 2 müssen unterschiedlich sein', 'error');
+                return;
+              }
+              if (maxPlaetze < minTeilnehmer) {
                 showToast('Max. Plätze müssen >= Min. Teilnehmer sein', 'error');
+                return;
+              }
+              if (maxPlaetze > maxAllowed) {
+                showToast('Zu viele Plätze: max. ' + maxAllowed + ' bei ' + getProjektTeacherCount(cleanedForm) + ' Lehrkraft/Lehrkräften.', 'error');
                 return;
               }
               try {
@@ -7510,14 +7850,16 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                   const svc = new window.KrsDataService();
                   // Payload bereinigen: keine Hilfs-Felder mitschicken
                   const payload = {
-                    titel: formData.titel,
-                    lehrer_id: formData.lehrer_id,
-                    ort: formData.ort || null,
-                    kurzbeschreibung: formData.kurzbeschreibung || null,
-                    min_teilnehmer: formData.min_teilnehmer ?? 0,
-                    max_plaetze: formData.max_plaetze ?? 0,
-                    min_klasse: formData.min_klasse ?? 5,
-                    max_klasse: formData.max_klasse ?? 9,
+                    titel: cleanedForm.titel,
+                    lehrer_id: cleanedForm.lehrer_id,
+                    lehrer2_id: cleanedForm.lehrer2_id || null,
+                    ort: cleanedForm.ort || null,
+                    kurzbeschreibung: cleanedForm.kurzbeschreibung || null,
+                    min_teilnehmer: minTeilnehmer,
+                    max_plaetze: maxPlaetze,
+                    min_klasse: cleanedForm.min_klasse ?? 5,
+                    max_klasse: cleanedForm.max_klasse ?? 9,
+                    status: cleanedForm.status || 'entwurf',
                   };
                   if (editingId === 'new') {
                     await svc.createProjekt(payload);
@@ -7527,12 +7869,19 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                     showToast('Projekt aktualisiert!', 'success');
                   }
                 } else {
+                  const savedForm = {
+                    ...cleanedForm,
+                    lehrer2_id: cleanedForm.lehrer2_id || null,
+                    min_teilnehmer: minTeilnehmer,
+                    max_plaetze: maxPlaetze,
+                    status: cleanedForm.status || 'entwurf',
+                  };
                   if (editingId === 'new') {
-                    mockProjekteData.push(formData);
+                    mockProjekteData.push(savedForm);
                     showToast('Projekt erstellt!', 'success');
                   } else {
                     const idx = mockProjekteData.findIndex(p => p.id === editingId);
-                    if (idx >= 0) mockProjekteData[idx] = formData;
+                    if (idx >= 0) mockProjekteData[idx] = savedForm;
                     showToast('Projekt aktualisiert!', 'success');
                   }
                   setLocalKey(k => k + 1); // v27: Re-Render erzwingen
@@ -7639,9 +7988,10 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
               </div>
             </td></tr>
           ` : projekte.map(p => {
-            const ausgelastet = p.belegt >= p.max_plaetze;
-            const ueberbucht = p.erstwahl_wuensche > p.max_plaetze;
-            const lehrer = mockLehrerData.find(l => l.id === p.lehrer_id);
+            const belegt = p.belegt ?? 0;
+            const ausgelastet = belegt >= p.max_plaetze;
+            const ueberbucht = (p.erstwahl_wuensche ?? 0) > p.max_plaetze;
+            const lehrerNamen = getProjektLehrerNames(p).join(', ') || '—';
             return html`
               <tr key=${p.id}>
                 <td>
@@ -7649,12 +7999,12 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
                     <img src=${p.bild_url} alt="" style="width:48px;height:48px;object-fit:cover;border-radius:4px;border:1px solid var(--border-color, #D0D7DE);" />
                   ` : html`
                     <div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:#F6F7F9;border-radius:4px;border:1px dashed #D0D7DE;color:#8B97A2;font-size:1.1rem;">📷</div>
-                  `}
+                `}
                 </td>
                 <td><strong>${p.titel}</strong><br/><small style="color:var(--text-muted);">${p.kurzbeschreibung}</small></td>
-                <td>${lehrer?.name || p.lehrer}</td>
+                <td>${lehrerNamen}</td>
                 <td>
-                  ${p.belegt}/${p.max_plaetze}
+                  ${belegt}/${p.max_plaetze}
                   ${ausgelastet ? html`<span class="pill pill-success" style="margin-left:4px;">voll</span>` : ''}
                 </td>
                 <td>${p.min_klasse}-${p.max_klasse}</td>
@@ -7689,7 +8039,7 @@ function ProjekteView({ setModal, refreshKey, loadAll }) {
 // (enforce_projektlehrer_whitelist) erzwingt Spalten-Whitelist serverseitig —
 // hier im Frontend bilden wir das ab, damit die UX sauber bleibt.
 //
-// Eigene Projekte = mockProjekteData.filter(p => p.lehrer_id === currentDbUserId)
+// Eigene Projekte = Projekte, bei denen man als Lehrer 1 oder Lehrer 2 zugeordnet ist.
 // Anlegen nur in setup/anmeldung-Phase. Trigger erzwingt status='entwurf'.
 function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUserId }) {
   const [editingId, setEditingId] = useState(null);
@@ -7702,7 +8052,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
         ? (mockLehrerData.find(l => l.rolle === 'projektlehrer') || {}).id
         : null);
 
-  const ownProjekte = (mockProjekteData || []).filter(p => p.lehrer_id === effectiveOwnerId);
+  const ownProjekte = (mockProjekteData || []).filter(p => isProjektTeacher(p, effectiveOwnerId));
 
   const canCreate = phase === 'setup' || phase === 'anmeldung';
 
@@ -7716,6 +8066,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
       langbeschreibung: '',
       ort: '',
       lehrer_id: effectiveOwnerId,
+      lehrer2_id: '',
       // Pflichtfelder für Schema; Trigger erzwingt status='entwurf' beim INSERT,
       // egal was wir hier mitgeben. Defaults aus Schema.
       min_teilnehmer: 6,
@@ -7732,7 +8083,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
     // Defensive Schicht (RLS + Trigger sind die echte Schutzgrenze, das hier ist UX):
     // Wenn die Liste aus irgendwelchen Gründen ein Fremd-Projekt enthielte,
     // verweigern wir das Öffnen client-seitig und zeigen einen Toast.
-    if (effectiveOwnerId && projekt.lehrer_id !== effectiveOwnerId) {
+    if (effectiveOwnerId && !isProjektTeacher(projekt, effectiveOwnerId)) {
       showToast('Du kannst nur eigene Projekte bearbeiten.', 'error');
       return;
     }
@@ -7776,6 +8127,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
           ${editingId !== 'new' && html`
             <div style="background:#F6F7F9;border-radius:6px;padding:10px 12px;margin-top:10px;font-size:0.85rem;color:#6C7A87;line-height:1.5;">
               <strong style="color:#4A6A83;">Festgelegt von der Projektleitung</strong><br/>
+              Leitung: ${getProjektLehrerNames(formData).join(', ') || '—'}<br/>
               Plätze: ${formData?.min_teilnehmer || '?'}–${formData?.max_plaetze || '?'} ·
               Klassen: ${formData?.min_klasse || '?'}–${formData?.max_klasse || '?'} ·
               Status: <strong>${formData?.status || 'entwurf'}</strong>
@@ -7862,6 +8214,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                       langbeschreibung: formData.langbeschreibung || null,
                       ort: formData.ort || null,
                       lehrer_id: effectiveOwnerId,
+                      lehrer2_id: null,
                       min_teilnehmer: formData.min_teilnehmer ?? 6,
                       max_plaetze: formData.max_plaetze ?? 12,
                       min_klasse: formData.min_klasse ?? 5,
@@ -7887,6 +8240,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
                     mockProjekteData.push({
                       ...formData,
                       lehrer_id: effectiveOwnerId,
+                      lehrer2_id: '',
                       status: 'entwurf',
                     });
                     showToast('Projekt-Entwurf gespeichert! (Demo)', 'success');
@@ -7949,6 +8303,7 @@ function ProjektLehrerView({ setModal, refreshKey, loadAll, phase, currentDbUser
             <div style="display:flex;gap:6px;flex-wrap:wrap;font-size:0.75rem;color:#6C7A87;align-items:center;">
               <span class=${"pill " + (p.status === 'veroeffentlicht' ? 'pill-success' : 'pill-info')}>${p.status || 'entwurf'}</span>
               ${p.ort ? html`<span>📍 ${p.ort}</span>` : ''}
+              <span>Leitung: ${getProjektLehrerNames(p).join(', ') || '—'}</span>
               <span>👥 ${p.min_teilnehmer || '?'}–${p.max_plaetze || '?'}</span>
               <span>🎓 ${p.min_klasse || '?'}–${p.max_klasse || '?'}</span>
             </div>
@@ -8252,6 +8607,7 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
           <div class="input-group">
             <label>Rolle</label>
             <select value=${formData?.rolle || 'projektlehrer'} onChange=${e => setFormData({...formData, rolle: e.target.value})}>
+              <option value="super_admin">Super-Admin</option>
               <option value="projektlehrer">Projektlehrer</option>
               <option value="klassenlehrer">Klassenlehrer</option>
               <option value="projektleitung">Projektleitung</option>
@@ -8263,7 +8619,7 @@ function LehrerView({ setModal, refreshKey, loadAll }) {
           </div>
           <div class="btn-group" style="margin-top:20px;">
             <button class="btn btn-ghost" onClick=${() => { setModal(null); setFormData(null); setEditingId(null); }}>Abbrechen</button>
-            ${editingId !== 'new' && editingId !== 'u1' && html`
+            ${editingId !== 'new' && formData?.rolle !== 'super_admin' && html`
               <button class="btn btn-danger" onClick=${async () => {
                 const name = formData?.name || 'diesen Lehrer';
                 if (!window.confirm(`Lehrer "${name}" wirklich löschen?\n\nZugewiesene Projekte bleiben erhalten, verlieren aber diesen Lehrer. Diese Aktion kann nicht rückgängig gemacht werden.`)) return;
@@ -9608,11 +9964,14 @@ function ExportView() {
     pdf.setFontSize(15);
     pdf.setTextColor(74, 106, 131); // krs-blau
     pdf.setFont('helvetica', 'bold');
-    pdf.text('Kurpfalz-Realschule Schriesheim', 34, 17);
+    const _T = window.TENANT || {};
+    const _schulName = (_T.schule && _T.schule.name_lang) || 'Schule';
+    const _projektJahr = (_T.termine && _T.termine.projektwoche_jahr) || '';
+    pdf.text(_schulName, 34, 17);
     pdf.setFontSize(11);
     pdf.setTextColor(60, 60, 60);
     pdf.setFont('helvetica', 'normal');
-    pdf.text('Projektwoche 2026 · ' + titel, 34, 24);
+    pdf.text(('Projektwoche ' + _projektJahr).trim() + ' · ' + titel, 34, 24);
     if (subtitel) {
       pdf.setFontSize(9);
       pdf.setTextColor(120, 120, 120);

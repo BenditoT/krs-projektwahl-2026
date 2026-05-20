@@ -28,6 +28,23 @@
     typeof window.supabase !== 'undefined';
 
   // ---------- Normalisierung ----------
+  function joinLehrerNames(row) {
+    const names = [];
+    const first =
+      row.lehrer_name ||
+      row.lehrer1_name ||
+      (row.lehrer && typeof row.lehrer === 'object' ? row.lehrer.name : row.lehrer);
+    const second =
+      row.lehrer2_name ||
+      row.zweitlehrer_name ||
+      (row.lehrer2 && typeof row.lehrer2 === 'object' ? row.lehrer2.name : row.lehrer2);
+    [first, second].forEach(name => {
+      const clean = String(name || '').trim();
+      if (clean && !names.includes(clean)) names.push(clean);
+    });
+    return names.join(', ');
+  }
+
   function normalizeProjektPublic(row) {
     // Für projekte_public (View) — hat lehrer_name, kurzbeschreibung, langbeschreibung
     return {
@@ -35,7 +52,7 @@
       titel: row.titel,
       beschreibung: row.kurzbeschreibung || row.beschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer_name || row.lehrer || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -50,7 +67,7 @@
       titel: row.titel,
       beschreibung: row.beschreibung || row.kurzbeschreibung || '',
       langbeschreibung: row.langbeschreibung || '',
-      lehrer: row.lehrer || row.lehrer_name || '',
+      lehrer: joinLehrerNames(row),
       ort: row.ort || '',
       min_klasse: row.min_klasse,
       max_klasse: row.max_klasse,
@@ -368,10 +385,17 @@
         const src = window.MOCK_PROJEKTE || [];
         return src.map(normalizeMockProjekt);
       }
-      const { data, error } = await this.client
+      let { data, error } = await this.client
         .from('projekte')
-        .select('*, lehrer:users!lehrer_id(name, kuerzel)')
+        .select('*, lehrer:users!lehrer_id(name, kuerzel), lehrer2:users!lehrer2_id(name, kuerzel)')
         .order('titel');
+      if (error && /lehrer2_id|lehrer2|relationship|schema cache/i.test(error.message || '')) {
+        console.warn('[KRS] listProjekte: lehrer2_id fehlt noch, Fallback auf Ein-Lehrer-Schema.');
+        ({ data, error } = await this.client
+          .from('projekte')
+          .select('*, lehrer:users!lehrer_id(name, kuerzel)')
+          .order('titel'));
+      }
       if (error) throw new Error('listProjekte: ' + error.message);
       return data || [];
     }

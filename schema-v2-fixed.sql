@@ -82,6 +82,7 @@ CREATE TABLE projekte (
   kurzbeschreibung TEXT NOT NULL CHECK (char_length(kurzbeschreibung) <= 300),
   langbeschreibung TEXT,
   lehrer_id UUID NOT NULL REFERENCES users(id),
+  lehrer2_id UUID REFERENCES users(id),
   max_plaetze INT NOT NULL DEFAULT 12 CHECK (max_plaetze BETWEEN 1 AND 50),
   min_teilnehmer INT NOT NULL DEFAULT 6 CHECK (min_teilnehmer >= 1),  -- NEU
   min_klasse INT NOT NULL DEFAULT 5 CHECK (min_klasse BETWEEN 5 AND 10),
@@ -93,10 +94,13 @@ CREATE TABLE projekte (
   updated_at TIMESTAMPTZ DEFAULT now(),
   
   CONSTRAINT min_max_klasse_check CHECK (min_klasse <= max_klasse),
-  CONSTRAINT min_teilnehmer_check CHECK (min_teilnehmer <= max_plaetze)
+  CONSTRAINT min_teilnehmer_check CHECK (min_teilnehmer <= max_plaetze),
+  CONSTRAINT projekte_unterschiedliche_lehrer_check CHECK (lehrer2_id IS NULL OR lehrer2_id <> lehrer_id),
+  CONSTRAINT projekte_max_plaetze_lehrer_check CHECK (max_plaetze <= CASE WHEN lehrer2_id IS NULL THEN 12 ELSE 24 END)
 );
 
 CREATE INDEX idx_projekte_lehrer ON projekte(lehrer_id);
+CREATE INDEX idx_projekte_lehrer2 ON projekte(lehrer2_id);
 CREATE INDEX idx_projekte_status ON projekte(status);
 
 -- ============================================================
@@ -247,9 +251,12 @@ SELECT
   p.max_klasse,
   p.ort,
   p.bild_url,
-  u.name AS lehrer_name
+  NULLIF(CONCAT_WS(', ', u1.name, u2.name), '') AS lehrer_name,
+  u1.name AS lehrer1_name,
+  u2.name AS lehrer2_name
 FROM projekte p
-JOIN users u ON p.lehrer_id = u.id
+JOIN users u1 ON p.lehrer_id = u1.id
+LEFT JOIN users u2 ON p.lehrer2_id = u2.id
 WHERE p.status = 'veroeffentlicht';
 
 -- Projekt-Statistik (für Admin)
@@ -259,21 +266,24 @@ SELECT
   p.titel,
   p.max_plaetze,
   p.min_teilnehmer,
-  u.name AS lehrer_name,
+  NULLIF(CONCAT_WS(', ', u1.name, u2.name), '') AS lehrer_name,
   COUNT(DISTINCT z.schueler_code) AS belegt,
   p.max_plaetze - COUNT(DISTINCT z.schueler_code) AS frei,
   COUNT(DISTINCT w1.schueler_code) AS erstwahl_wuensche,
   COUNT(DISTINCT w2.schueler_code) AS zweitwahl_wuensche,
   COUNT(DISTINCT w3.schueler_code) AS drittwahl_wuensche,
-  COUNT(DISTINCT w1.schueler_code) + COUNT(DISTINCT w2.schueler_code) + COUNT(DISTINCT w3.schueler_code) AS gesamt_wuensche
+  COUNT(DISTINCT w1.schueler_code) + COUNT(DISTINCT w2.schueler_code) + COUNT(DISTINCT w3.schueler_code) AS gesamt_wuensche,
+  u1.name AS lehrer1_name,
+  u2.name AS lehrer2_name
 FROM projekte p
-JOIN users u ON p.lehrer_id = u.id
+JOIN users u1 ON p.lehrer_id = u1.id
+LEFT JOIN users u2 ON p.lehrer2_id = u2.id
 LEFT JOIN zuteilungen z ON z.projekt_id = p.id
 LEFT JOIN wahlen w1 ON w1.erstwahl_id = p.id
 LEFT JOIN wahlen w2 ON w2.zweitwahl_id = p.id
 LEFT JOIN wahlen w3 ON w3.drittwahl_id = p.id
 WHERE p.status = 'veroeffentlicht'
-GROUP BY p.id, p.titel, p.max_plaetze, p.min_teilnehmer, u.name;
+GROUP BY p.id, p.titel, p.max_plaetze, p.min_teilnehmer, u1.name, u2.name;
 
 -- Zuteilungen mit allen Kontextinfos
 CREATE OR REPLACE VIEW zuteilungen_detail AS
@@ -282,13 +292,16 @@ SELECT
   z.schueler_code,
   s.vorname, s.nachname, s.klasse, s.klassenstufe,
   z.projekt_id, p.titel AS projekt_titel,
-  u.name AS lehrer_name,
+  NULLIF(CONCAT_WS(', ', u1.name, u2.name), '') AS lehrer_name,
   z.wahl_nr,
-  z.updated_at
+  z.updated_at,
+  u1.name AS lehrer1_name,
+  u2.name AS lehrer2_name
 FROM zuteilungen z
 JOIN schueler s ON z.schueler_code = s.code
 LEFT JOIN projekte p ON z.projekt_id = p.id
-LEFT JOIN users u ON p.lehrer_id = u.id;
+LEFT JOIN users u1 ON p.lehrer_id = u1.id
+LEFT JOIN users u2 ON p.lehrer2_id = u2.id;
 
 -- Anmelde-Status pro Klasse (Klassenlehrer-Ansicht)
 CREATE OR REPLACE VIEW klassen_status AS
@@ -394,11 +407,13 @@ BEGIN
   END IF;
   
   -- Zuteilung vorhanden?
-  SELECT z.*, p.titel, p.kurzbeschreibung, p.ort, u.name AS lehrer_name
+  SELECT z.*, p.titel, p.kurzbeschreibung, p.ort,
+         NULLIF(CONCAT_WS(', ', u1.name, u2.name), '') AS lehrer_name
   INTO v_projekt_details
   FROM zuteilungen z
   LEFT JOIN projekte p ON z.projekt_id = p.id
-  LEFT JOIN users u ON p.lehrer_id = u.id
+  LEFT JOIN users u1 ON p.lehrer_id = u1.id
+  LEFT JOIN users u2 ON p.lehrer2_id = u2.id
   WHERE z.schueler_code = v_schueler.code AND z.projekt_id IS NOT NULL;
   
   IF FOUND THEN
@@ -614,8 +629,8 @@ CREATE POLICY "Anon sieht veröffentlichte Projekte" ON projekte
 
 CREATE POLICY "Lehrer verwaltet eigene Projekte" ON projekte
   FOR ALL TO authenticated
-  USING (lehrer_id = auth.uid())
-  WITH CHECK (lehrer_id = auth.uid());
+  USING (auth.uid() IN (lehrer_id, lehrer2_id))
+  WITH CHECK (auth.uid() IN (lehrer_id, lehrer2_id));
 
 CREATE POLICY "Admins verwalten alle Projekte" ON projekte
   FOR ALL TO authenticated
@@ -638,7 +653,7 @@ CREATE POLICY "Projektlehrer sehen eigene Teilnehmer" ON zuteilungen
   FOR SELECT TO authenticated
   USING (EXISTS (SELECT 1 FROM projekte 
     WHERE projekte.id = zuteilungen.projekt_id 
-    AND projekte.lehrer_id = auth.uid()));
+    AND auth.uid() IN (projekte.lehrer_id, projekte.lehrer2_id)));
 
 CREATE POLICY "Klassenlehrer sehen eigene Klasse" ON zuteilungen
   FOR SELECT TO authenticated
