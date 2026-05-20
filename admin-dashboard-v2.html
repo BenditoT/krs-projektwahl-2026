@@ -52,7 +52,7 @@ body{background:var(--bg);color:var(--text);line-height:1.55;min-height:100vh}
 /* === HAUPTBEREICH === */
 .main{padding:24px;max-width:100%;overflow-x:hidden;position:relative;}
 .main-header{margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
-.main-title{font-size:24px;font-weight:700;margin:0;letter-spacing:-0.4px}
+.main-title{font-size:24px;font-weight:700;margin:0;letter-spacing:0}
 .main-subtitle{color:var(--text-muted);font-size:14px;margin-top:4px}
 .user-chip{display:flex;align-items:center;gap:8px;padding:6px 12px;background:white;border:1px solid var(--border);border-radius:20px;font-size:13px}
 
@@ -631,10 +631,42 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       const { data: pub } = this.client.storage.from('projekt-bilder').getPublicUrl(path);
       // Cache-Buster anhängen, damit nach Overwrite sofort das neue Bild angezeigt wird
       const url = pub.publicUrl + '?t=' + Date.now();
-      const { error: updErr } = await this.client
-        .from('projekte').update({ bild_url: url }).eq('id', projektId);
-      if (updErr) throw new Error('uploadProjektBild/update: ' + updErr.message);
+      await this.persistProjektBildUrl(projektId, url, 'uploadProjektBild/update');
       return { url, path };
+    }
+    async persistProjektBildUrl(projektId, bildUrl, context = 'projektBild/update') {
+      const expected = bildUrl || null;
+      const rpc = await this.client.rpc('set_projekt_bild_url', {
+        p_projekt_id: projektId,
+        p_bild_url: expected,
+      });
+
+      if (!rpc.error) {
+        const row = Array.isArray(rpc.data) ? rpc.data[0] : rpc.data;
+        if (!row || (row.bild_url || null) !== expected) {
+          throw new Error(context + ': Bild wurde nicht am Projekt gespeichert');
+        }
+        return row;
+      }
+
+      const rpcMessage = rpc.error.message || String(rpc.error);
+      const rpcMissing = /set_projekt_bild_url|Could not find the function|PGRST202|schema cache/i.test(rpcMessage);
+      if (!rpcMissing) {
+        throw new Error(context + ': ' + rpcMessage);
+      }
+
+      const { data, error } = await this.client
+        .from('projekte')
+        .update({ bild_url: expected })
+        .eq('id', projektId)
+        .select('id,bild_url')
+        .maybeSingle();
+
+      if (error) throw new Error(context + ': ' + error.message);
+      if (!data || (data.bild_url || null) !== expected) {
+        throw new Error(context + ': Bild wurde hochgeladen, aber nicht am Projekt gespeichert. Bitte Projekt-Rechte/RLS prüfen.');
+      }
+      return data;
     }
     async deleteProjektBild(projektId) {
       if (this.isDemo) {
@@ -666,8 +698,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
       if (pathsToTry.length) {
         await this.client.storage.from('projekt-bilder').remove(pathsToTry).catch(() => {});
       }
-      const { error } = await this.client.from('projekte').update({ bild_url: null }).eq('id', projektId);
-      if (error) throw new Error('deleteProjektBild: ' + error.message);
+      await this.persistProjektBildUrl(projektId, null, 'deleteProjektBild');
       return { ok: true };
     }
 
@@ -876,7 +907,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v33';
+  window.KRS_VERSION = 'v34';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -1490,6 +1521,30 @@ import htm from 'https://esm.sh/htm@3.1.1';
 const html = htm.bind(h);
 
 const LOGO_SRC = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAJ0A2gDASIAAhEBAxEB/8QAHAABAAICAwEAAAAAAAAAAAAAAAYHBQgBAwQC/8QAVhAAAQMCAgUECg0ICQQBBQAAAAECAwQFBhEHEiExURNBYXEUIjI2c4GRssHRCBUjMzRSVFZydJOhsRYXGEJigpKUJDU3Q1NVs8LhJXWi8ERjg6PS8f/EABsBAQABBQEAAAAAAAAAAAAAAAACAQMEBgcF/8QAOxEBAAEDAQQEDQMEAgMBAAAAAAECAxEEBRIhMQYyQVETIjRTYXFykaGxwdHhFBaBFTM78CNCQ1LxYv/aAAwDAQACEQMRAD8A3LAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADhyo1qucqIiJmqrzAcggGLdLeEbDOtJDUSXatzySChRH7eCu3fipHmaaqymkjnveArtbbY96NWrc9ztXPcuqsbU+/wApci1XPHCE3KY7VwA6qOpgrKSGrppGywTMSSN7V2OaqZoqeI7S2mAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+function resolveAssetUrl(src) {
+  const clean = String(src || '').trim();
+  if (!clean) return '';
+  if (/^(data:|blob:|https?:)/i.test(clean)) return clean;
+  try {
+    return new URL(clean, document.baseURI || window.location.href).href;
+  } catch (_) {
+    return clean;
+  }
+}
+
+function tenantLogoSrc({ absolute = false } = {}) {
+  const tenantLogo = window.TENANT && window.TENANT.branding && window.TENANT.branding.logo_url;
+  const src = tenantLogo || LOGO_SRC;
+  return absolute ? resolveAssetUrl(src) : src;
+}
+
+function applyImageFallback(e, fallback = LOGO_SRC) {
+  const img = e && (e.currentTarget || e.target);
+  if (!img || img.dataset.fallbackApplied === '1') return;
+  img.dataset.fallbackApplied = '1';
+  img.src = fallback;
+}
 
 const MOCK_LEHRER = [
   {
@@ -6919,7 +6974,7 @@ function App() {
       `}
       <aside class=${"sidebar " + (sidebarOpen ? "mobile-open" : "")}>
         <div class="sidebar-header">
-          <div class="sidebar-logo"><img src=${LOGO_SRC} alt="KRS" /></div>
+          <div class="sidebar-logo"><img src=${tenantLogoSrc()} alt="KRS" onError=${applyImageFallback} /></div>
           <div class="sidebar-title">Projektwahl 2026</div>
           <div class="sidebar-subtitle">Admin-Bereich</div>
         </div>
@@ -7328,11 +7383,12 @@ function SchuelerView({ refreshKey }) {
     const schulKurz = (T.schule && T.schule.name_kurz) || 'Schule';
     const projektJahr = (T.termine && T.termine.projektwoche_jahr) || '';
     const terminBereich = (TH.terminBereich && TH.terminBereich()) || '';
+    const logoSrc = tenantLogoSrc({ absolute: true });
     const briefe = list.map(s => `
       <section class="brief">
         <header class="brief-header">
           <div style="display:flex;align-items:center;gap:10pt;">
-            <img src="${(T.branding && T.branding.logo_url) || LOGO_SRC}" alt="${escapeHtml(schulKurz)}" style="width:44pt;height:auto;display:block;" />
+            <img src="${escapeHtml(logoSrc)}" alt="${escapeHtml(schulKurz)}" style="width:44pt;height:auto;display:block;" onerror="this.style.display='none'" />
             <div class="absender">
               <strong>${escapeHtml(schulNameLang)}</strong><br/>
               Projektwoche ${escapeHtml(String(projektJahr))}
@@ -10370,7 +10426,13 @@ function EinstellungenView() {
 // Der ältere Hack lief erst nach render() und hatte dadurch eine Race-Condition.
 (function() {
   const img = document.getElementById('login-logo');
-  if (img && !img.src) img.src = LOGO_SRC;
+  if (img) {
+    img.onerror = () => {
+      img.onerror = null;
+      img.src = LOGO_SRC;
+    };
+    if (!img.src) img.src = tenantLogoSrc();
+  }
 })();
 
 render(html`<${App} />`, document.getElementById('app'));

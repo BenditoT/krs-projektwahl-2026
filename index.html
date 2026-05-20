@@ -87,7 +87,7 @@
     <div class="logo-strip"><span class="b"></span><span class="o"></span><span class="g"></span></div>
     <img data-tenant="logo" src="krs-logo.jpg" alt="Schul-Logo"
          style="display:block; margin: 24px auto 8px; max-width: 280px; width: 70%; height: auto;"
-         onerror="this.style.display='none';">
+         onerror="if(!this.dataset.fallbackApplied){this.dataset.fallbackApplied='1';this.src='krs-logo.jpg';}else{this.style.display='none';}">
     <h1 data-tenant="h1">Projektwoche</h1>
     <p class="subtitle" data-tenant="subtitle">Projekttage</p>
 
@@ -140,7 +140,13 @@
     if (!T) return;
     document.title = `${T.schule.name_kurz || 'Schule'} Projektwoche ${T.termine.projektwoche_jahr || ''}`.trim();
     const set = (sel, fn) => { const el = document.querySelector(sel); if (el) fn(el); };
-    set('[data-tenant="logo"]',     el => { el.src = T.branding.logo_url || el.src; el.alt = `${T.schule.name_kurz || 'Schule'} · ${T.schule.name_lang || ''}`; });
+    const resolveAssetUrl = (src) => {
+      const clean = String(src || '').trim();
+      if (!clean || /^(data:|blob:|https?:)/i.test(clean)) return clean;
+      try { return new URL(clean, document.baseURI || window.location.href).href; }
+      catch (_) { return clean; }
+    };
+    set('[data-tenant="logo"]',     el => { el.src = resolveAssetUrl(T.branding.logo_url) || el.src; el.alt = `${T.schule.name_kurz || 'Schule'} · ${T.schule.name_lang || ''}`; });
     set('[data-tenant="h1"]',       el => el.textContent = `${T.schule.name_kurz || 'Schule'} Projektwoche ${T.termine.projektwoche_jahr || ''}`.trim());
     set('[data-tenant="subtitle"]', el => el.textContent = `${T.schule.name_lang || ''} · Projekttage ${(H.terminBereich && H.terminBereich()) || ''}`.replace(/^ · /, '').replace(/ ·  $/, ''));
     set('[data-tenant="footer-schule"]', el => el.textContent = T.schule.name_lang || 'Schule');

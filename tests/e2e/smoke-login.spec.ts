@@ -17,6 +17,23 @@ test.describe('Smoke: Login-Gate', () => {
     await expect(page.locator('#appContent')).toBeHidden();
   });
 
+  test('Logo lädt im Login-Gate und in der Sidebar', async ({ page }) => {
+    await page.goto('/admin-dashboard-v2.html?forceMode=demo');
+    await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
+
+    const loginLogo = page.locator('#login-logo');
+    await expect(loginLogo).toBeVisible();
+    await expect.poll(() => loginLogo.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+
+    await page.locator('#pwInput').fill('Krs26PW');
+    await page.locator('#gateBtnDemo').click();
+    await expect(page.locator('#appContent')).toBeVisible();
+
+    const sidebarLogo = page.locator('.sidebar-logo img');
+    await expect(sidebarLogo).toBeVisible();
+    await expect.poll(() => sidebarLogo.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  });
+
   test('Richtiges Passwort → App-Content sichtbar, Version v22+ in Console', async ({ page }) => {
     await page.goto('/admin-dashboard-v2.html?forceMode=demo');
     await page.locator('#pwInput').fill('Krs26PW');

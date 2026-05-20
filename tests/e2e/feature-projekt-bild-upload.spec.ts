@@ -29,7 +29,7 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
     expect(hasUpload, 'Modal muss Bild-Upload-Feld oder Bild-URL-Feld enthalten').toBe(true);
   });
 
-  test('Bild-URL-Feld kann befüllt werden', async ({ page }) => {
+  test('Bild-Upload bleibt nach erneutem Öffnen des Projekts sichtbar', async ({ page }) => {
     await openAppLoggedIn(page);
     await goToSection(page, 'projekte');
 
@@ -43,19 +43,25 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
     await editBtn.click();
     await expect(page.locator('.modal-content')).toBeVisible();
 
-    // Bild-URL Feld befüllen (url-input oder bild-input)
-    const bildInput = page.locator('.modal-content input').filter({ hasText: '' })
-      .nth(await page.locator('.modal-content input[type="text"]').count() - 1);
+    const titel = await page.locator('.modal-content input[type="text"]').first().inputValue();
+    expect(titel, 'Projekt-Titel im Edit-Modal darf nicht leer sein').not.toBe('');
 
-    // Robusterer Ansatz: input mit http-Placeholder
-    const urlInput = page.locator('.modal-content input[type="text"]').filter({ has: page.locator('[placeholder*="http"], [placeholder*="Bild"]') }).first();
-    if (await urlInput.count() > 0) {
-      await urlInput.fill('https://example.com/test.jpg');
-      const val = await urlInput.inputValue();
-      expect(val).toContain('example.com');
-    }
-    // Kein Absturz = OK
+    await page
+      .locator('.modal-content input[type="file"]')
+      .first()
+      .setInputFiles('tests/fixtures/uploads/projekt-bild-sample.png');
+
+    const preview = page.locator('.modal-content img[alt="Projekt-Bild"]');
+    await expect(preview).toBeVisible({ timeout: 5_000 });
+    await expect(preview).toHaveJSProperty('naturalWidth', 1);
+
+    await page.locator('.modal-content').getByRole('button', { name: /abbrechen/i }).click();
+    await expect(page.locator('.modal-content')).toBeHidden();
+
+    const row = page.locator('table tbody tr').filter({ hasText: titel }).first();
+    await row.getByRole('button', { name: /Bearbeiten|✏️/i }).click();
     await expect(page.locator('.modal-content')).toBeVisible();
+    await expect(page.locator('.modal-content img[alt="Projekt-Bild"]')).toBeVisible({ timeout: 5_000 });
   });
 
   test('Zu großes Bild (>5 MB) wirft Toast-Fehler', async ({ page }) => {

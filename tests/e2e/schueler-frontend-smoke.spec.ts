@@ -34,6 +34,15 @@ test.describe('Schüler-Frontend: Smoke', () => {
     expect(counts.schueler, 'mind. 4 Demo-Schüler erwartet').toBeGreaterThan(3);
   });
 
+  test('Logo-Bild lädt im Schüler-Frontend', async ({ page }) => {
+    await page.goto('/schueler-frontend-v3.html?forceMode=demo');
+    await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
+
+    const logo = page.locator('.logo-wrapper img');
+    await expect(logo).toBeVisible();
+    await expect.poll(() => logo.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  });
+
   test('URL-Param ?code=… submitet automatisch', async ({ page }) => {
     await page.goto('/schueler-frontend-v3.html?forceMode=demo&code=8A-T4P1');
     await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
@@ -42,5 +51,18 @@ test.describe('Schüler-Frontend: Smoke', () => {
     // h2 ist "Bist du das? 🤔", die Schüler-Daten stehen in .bestaetigung-box.
     await expect(page.locator('h2').filter({ hasText: /Bist du das/i })).toBeVisible({ timeout: 5_000 });
     await expect(page.locator('.bestaetigung-box')).toContainText('Anna Schmidt');
+  });
+
+  test('Projektbilder werden in der Wahlliste angezeigt', async ({ page }) => {
+    await page.goto('/schueler-frontend-v3.html?forceMode=demo&code=8A-T4P1');
+    await page.waitForFunction(() => typeof (window as any).KRS_VERSION === 'string');
+    await page.locator('button').filter({ hasText: /Ja, das bin ich/ }).click();
+
+    const cardImage = page
+      .locator('.projekt-card')
+      .filter({ hasText: 'Fotografie & Bildbearbeitung' })
+      .locator('img.projekt-image');
+    await expect(cardImage).toBeVisible();
+    await expect.poll(() => cardImage.evaluate(img => (img as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   });
 });
