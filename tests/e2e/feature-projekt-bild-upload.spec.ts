@@ -64,6 +64,15 @@ test.describe('Feature: Projekt-Bild-Upload', () => {
     await expect(page.locator('.modal-content img[alt="Projekt-Bild"]')).toBeVisible({ timeout: 5_000 });
   });
 
+  test('Produktiv-Reload übernimmt gespeicherte Bild-URL in die Projektliste', async ({ page }) => {
+    await page.goto('/admin-dashboard-v2.html?forceMode=demo');
+    const source = await page.evaluate(async () => {
+      const res = await fetch('/admin-dashboard-v2.html');
+      return res.text();
+    });
+    expect(source).toMatch(/replaceArray\(mockProjekteData,[\s\S]*bild_url:\s*p\.bild_url\s*\|\|\s*null[\s\S]*status:/);
+  });
+
   test('Zu großes Bild (>5 MB) wirft Toast-Fehler', async ({ page }) => {
     await openAppLoggedIn(page);
     await goToSection(page, 'projekte');

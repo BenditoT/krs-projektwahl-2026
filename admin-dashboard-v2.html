@@ -907,7 +907,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--krs-blau
 
   window.KrsDataService = KrsDataService;
   window.KRS_MODE = HAS_SUPABASE ? 'produktiv' : 'demo';
-  window.KRS_VERSION = 'v34';
+  window.KRS_VERSION = 'v35';
   console.info('[KRS] DataService bereit — Modus:', window.KRS_MODE, '· Version:', window.KRS_VERSION);
 })();
 </script>
@@ -6772,6 +6772,7 @@ function App() {
         max_plaetze: p.max_plaetze ?? p.max_teilnehmer ?? 0,
         min_klasse: p.min_klasse ?? 5,
         max_klasse: p.max_klasse ?? 9,
+        bild_url: p.bild_url || null,
         status: p.status || 'aktiv'
       })));
       replaceArray(mockTauschData, tauschwuensche || []);
